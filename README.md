@@ -60,12 +60,13 @@ Creates up to 5 playlists for your most recent listening eras (default).
 
 ### Options
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--dry-run` | `false` | Preview eras without creating playlists |
-| `--limit` | `5` | Maximum playlists to create (0 = unlimited) |
-| `--gap` | `7` | Gap threshold in days to split eras |
-| `--min-size` | `3` | Minimum tracks required per era |
+| Flag           | Default | Description                                                      |
+| -------------- | ------- | ---------------------------------------------------------------- |
+| `--dry-run`    | `false` | Preview eras without creating playlists                          |
+| `--limit`      | `5`     | Maximum playlists to create (0 = unlimited)                      |
+| `--gap`        | `7`     | Gap threshold in days to split eras                              |
+| `--min-size`   | `3`     | Minimum tracks required per era                                  |
+| `--max-tracks` | `30`    | Maximum tracks per era; splits large eras at natural gaps (0 = no limit) |
 
 ### Examples
 
@@ -82,6 +83,12 @@ spotify-era-organizer --gap=14
 # Require at least 5 tracks per era
 spotify-era-organizer --min-size=5
 
+# Smaller playlists (20 tracks max, splits at natural gaps)
+spotify-era-organizer --max-tracks=20
+
+# No splitting (unlimited tracks per era)
+spotify-era-organizer --max-tracks=0
+
 # Create all playlists (no limit)
 spotify-era-organizer --limit=0
 ```
@@ -94,7 +101,11 @@ spotify-era-organizer --limit=0
    - Sort songs by add date
    - Split into eras when gaps exceed threshold (default: 7 days)
    - Filter out small clusters (default: < 3 tracks)
-4. **Create** private playlists for each era (most recent first)
+4. **Split large eras** at natural listening gaps:
+   - If an era exceeds `--max-tracks`, find the largest internal gaps
+   - Split at those quiet periods to preserve natural listening patterns
+   - Playlists are named with `(1/3)`, `(2/3)`, etc. suffix
+5. **Create** private playlists for each era (most recent first)
 
 ## Output Example
 
@@ -109,13 +120,13 @@ Showing 5 of 12 eras (use --limit=0 for all)
 
 Found 5 eras from 500 tracks (23 outliers skipped)
 
-Era 1: 2024-11-15 to 2024-12-01 (45 tracks)
+Era 1: 2024-11-15 to 2024-12-01 (28 tracks) [2/2]
   • "Song Name" - Artist
   • "Another Song" - Another Artist
   • "Third Song" - Third Artist
-  ... and 42 more
+  ... and 25 more
 
-Era 2: 2024-10-01 to 2024-10-20 (32 tracks)
+Era 2: 2024-10-20 to 2024-11-10 (25 tracks) [1/2]
 ...
 
 Creating playlists...
