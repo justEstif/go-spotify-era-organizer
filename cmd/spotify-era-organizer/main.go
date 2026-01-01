@@ -50,6 +50,15 @@ func (c Config) toClusteringConfig() clustering.Config {
 	}
 }
 
+// extractTrackIDs extracts Spotify track IDs from a slice of tracks.
+func extractTrackIDs(tracks []clustering.Track) []string {
+	ids := make([]string, len(tracks))
+	for i, t := range tracks {
+		ids[i] = t.ID
+	}
+	return ids
+}
+
 func main() {
 	cfg := parseFlags()
 	if err := run(cfg); err != nil {
@@ -117,8 +126,34 @@ func run(cfg Config) error {
 		return nil
 	}
 
-	// TODO: Playlist creation will be wired up in CLI Integration task (dng)
-	fmt.Println("\nPlaylist creation not yet implemented.")
+	// Create playlists for each era
+	if len(eras) == 0 {
+		fmt.Println("\nNo eras to create playlists for.")
+		return nil
+	}
 
+	fmt.Println("\nCreating playlists...")
+	for i, era := range eras {
+		// Generate playlist name with date range
+		startDate := era.StartDate.Format("2006-01-02")
+		endDate := era.EndDate.Format("2006-01-02")
+		playlistName := fmt.Sprintf("%s to %s", startDate, endDate)
+
+		// Create the playlist (private, no description)
+		playlistID, err := client.CreatePlaylist(ctx, playlistName, "", false)
+		if err != nil {
+			return fmt.Errorf("creating playlist %q: %w", playlistName, err)
+		}
+
+		// Add tracks to the playlist
+		trackIDs := extractTrackIDs(era.Tracks)
+		if err := client.AddTracksToPlaylist(ctx, playlistID, trackIDs); err != nil {
+			return fmt.Errorf("adding tracks to playlist %q: %w", playlistName, err)
+		}
+
+		fmt.Printf("Created playlist %d/%d: %q (%d tracks)\n", i+1, len(eras), playlistName, len(era.Tracks))
+	}
+
+	fmt.Printf("\nDone! Created %d playlists.\n", len(eras))
 	return nil
 }
