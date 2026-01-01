@@ -1,0 +1,23 @@
+{{define "loading-spinner"}}
+<div class="htmx-indicator" id="{{.ID}}">
+    <div class="spinner"></div>
+    <span class="text-secondary">{{.Message}}</span>
+</div>
+{{end}}
+
+{{define "loading-skeleton"}}
+<div class="skeleton" style="height: {{.Height}}; width: {{.Width}};"></div>
+{{end}}
+
+{{define "loading-card"}}
+<article class="era-card">
+    <div class="era-card__header">
+        <div class="skeleton" style="height: 2rem; width: 60%; margin-bottom: var(--space-sm);"></div>
+        <div class="skeleton" style="height: 1rem; width: 40%;"></div>
+    </div>
+    <div class="era-card__mood-bar skeleton" style="height: 4px;"></div>
+    <div class="era-card__stats">
+        <div class="skeleton" style="height: 1rem; width: 30%;"></div>
+    </div>
+</article>
+{{end}}

@@ -1,118 +1,53 @@
-// Command spotify-era-organizer analyzes Spotify liked songs and creates mood-based playlists.
+// Command spotify-era-organizer runs the Spotify Era Organizer web application.
 package main
 
 import (
-	"context"
-	"errors"
-	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 
-	"github.com/justestif/go-spotify-era-organizer/internal/auth"
-	"github.com/justestif/go-spotify-era-organizer/internal/spotify"
+	"github.com/justestif/go-spotify-era-organizer/internal/web"
+	webfs "github.com/justestif/go-spotify-era-organizer/web"
 )
 
-// Config holds CLI configuration options.
-type Config struct {
-	NumClusters    int  // Number of mood-based clusters to create
-	MinClusterSize int  // Minimum tracks per era
-	DryRun         bool // Preview mode (no playlist creation)
-	Limit          int  // Maximum playlists to create (0 = unlimited)
-}
-
-// parseFlags parses CLI flags and returns configuration.
-func parseFlags() Config {
-	cfg := Config{}
-	flag.IntVar(&cfg.NumClusters, "clusters", 3, "number of mood-based clusters to create")
-	flag.IntVar(&cfg.MinClusterSize, "min-size", 3, "minimum tracks per era")
-	flag.BoolVar(&cfg.DryRun, "dry-run", false, "preview clusters without creating playlists")
-	flag.IntVar(&cfg.Limit, "limit", 0, "maximum playlists to create (0 = unlimited)")
-	flag.Parse()
-	return cfg
-}
-
-// validate checks that configuration values are valid.
-func (c Config) validate() error {
-	if c.NumClusters < 1 {
-		return fmt.Errorf("clusters must be at least 1, got %d", c.NumClusters)
-	}
-	if c.MinClusterSize < 1 {
-		return fmt.Errorf("min-size must be at least 1, got %d", c.MinClusterSize)
-	}
-	if c.Limit < 0 {
-		return fmt.Errorf("limit must be non-negative, got %d", c.Limit)
-	}
-	return nil
-}
-
 func main() {
-	cfg := parseFlags()
-	if err := run(cfg); err != nil {
+	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(cfg Config) error {
-	if err := cfg.validate(); err != nil {
-		return err
+func run() error {
+	// Validate environment variables
+	clientID := os.Getenv("SPOTIFY_ID")
+	clientSecret := os.Getenv("SPOTIFY_SECRET")
+
+	if clientID == "" || clientSecret == "" {
+		return fmt.Errorf("please set SPOTIFY_ID and SPOTIFY_SECRET environment variables")
 	}
 
-	ctx := context.Background()
-
-	authenticator, err := auth.New()
+	// Create sub-filesystems for templates and static files
+	templates, err := fs.Sub(webfs.TemplatesFS, "templates")
 	if err != nil {
-		if errors.Is(err, auth.ErrMissingCredentials) {
-			return fmt.Errorf("please set SPOTIFY_ID and SPOTIFY_SECRET environment variables")
-		}
-		return fmt.Errorf("creating authenticator: %w", err)
+		return fmt.Errorf("creating templates filesystem: %w", err)
 	}
 
-	apiClient, err := authenticator.Authenticate(ctx)
+	static, err := fs.Sub(webfs.StaticFS, "static")
 	if err != nil {
-		if errors.Is(err, auth.ErrAuthTimeout) {
-			return fmt.Errorf("authentication timed out - please try again")
-		}
-		return fmt.Errorf("authentication failed: %w", err)
+		return fmt.Errorf("creating static filesystem: %w", err)
 	}
 
-	// Wrap with our client for convenience methods
-	client := spotify.New(apiClient)
-
-	user, err := apiClient.CurrentUser(ctx)
+	// Create and start server
+	server, err := web.NewServer(web.ServerConfig{
+		Addr:         web.DefaultAddr,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		TemplatesFS:  templates,
+		StaticFS:     static,
+	})
 	if err != nil {
-		return fmt.Errorf("getting user info: %w", err)
+		return fmt.Errorf("creating server: %w", err)
 	}
 
-	fmt.Printf("Authenticated as: %s\n", user.DisplayName)
-
-	// Fetch all liked songs
-	fmt.Println("\nFetching liked songs...")
-	tracks, err := client.FetchAllLikedSongs(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching liked songs: %w", err)
-	}
-
-	if len(tracks) == 0 {
-		fmt.Println("No liked songs found.")
-		return nil
-	}
-
-	fmt.Printf("Found %d liked songs.\n", len(tracks))
-
-	// DEPRECATED: Spotify Audio Features API
-	// The Audio Features API was deprecated by Spotify in November 2024 for new apps.
-	// Mood-based clustering is being migrated to use Last.fm tags instead.
-	// See: https://github.com/justestif/go-spotify-era-organizer/issues (V3 Epic)
-	fmt.Println()
-	fmt.Println("=================================================================")
-	fmt.Println("NOTICE: Mood-based clustering is temporarily unavailable.")
-	fmt.Println()
-	fmt.Println("Spotify deprecated the Audio Features API in November 2024.")
-	fmt.Println("We are migrating to Last.fm tags for mood detection.")
-	fmt.Println()
-	fmt.Println("Please use the web UI (coming soon) or check back for updates.")
-	fmt.Println("=================================================================")
-
-	return nil
+	return server.Run()
 }
