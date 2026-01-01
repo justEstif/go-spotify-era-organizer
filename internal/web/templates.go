@@ -36,7 +36,8 @@ func (t *Templates) Render(w io.Writer, page string, data any) error {
 		return fmt.Errorf("template %q not found", page)
 	}
 
-	return tmpl.Execute(w, data)
+	// Execute the "base" template which includes the page content
+	return tmpl.ExecuteTemplate(w, "base", data)
 }
 
 // load parses all templates from the filesystem.
