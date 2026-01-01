@@ -176,6 +176,10 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.MinClusterSize != 3 {
 		t.Errorf("MinClusterSize = %d, want 3", cfg.MinClusterSize)
 	}
+
+	if cfg.OutlierMode != OutlierModeSkip {
+		t.Errorf("OutlierMode = %s, want %s", cfg.OutlierMode, OutlierModeSkip)
+	}
 }
 
 func TestEraDateBoundaries(t *testing.T) {

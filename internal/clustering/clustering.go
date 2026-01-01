@@ -21,10 +21,20 @@ type Era struct {
 	EndDate   time.Time
 }
 
+// OutlierMode determines how tracks from small clusters are handled.
+type OutlierMode string
+
+const (
+	// OutlierModeSkip returns outliers but takes no action on them.
+	// This is the default behavior.
+	OutlierModeSkip OutlierMode = "skip"
+)
+
 // Config holds clustering parameters.
 type Config struct {
 	GapThreshold   time.Duration // Minimum gap to split eras
 	MinClusterSize int           // Minimum tracks per era
+	OutlierMode    OutlierMode   // How to handle small clusters (default: skip)
 }
 
 // DefaultConfig returns the recommended default configuration.
@@ -32,6 +42,7 @@ func DefaultConfig() Config {
 	return Config{
 		GapThreshold:   7 * 24 * time.Hour, // 7 days
 		MinClusterSize: 3,
+		OutlierMode:    OutlierModeSkip,
 	}
 }
 
