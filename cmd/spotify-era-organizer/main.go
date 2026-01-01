@@ -19,6 +19,7 @@ import (
 type Config struct {
 	GapDays        int  // Gap threshold in days to split eras
 	MinClusterSize int  // Minimum tracks per era
+	MaxTracks      int  // Maximum tracks per era (0 = no limit)
 	DryRun         bool // Preview mode (no playlist creation)
 	Limit          int  // Maximum playlists to create (0 = unlimited)
 }
@@ -28,6 +29,7 @@ func parseFlags() Config {
 	cfg := Config{}
 	flag.IntVar(&cfg.GapDays, "gap", 7, "gap threshold in days to split eras")
 	flag.IntVar(&cfg.MinClusterSize, "min-size", 3, "minimum tracks per era")
+	flag.IntVar(&cfg.MaxTracks, "max-tracks", 30, "maximum tracks per era, splits large eras at natural gaps (0 = no limit)")
 	flag.BoolVar(&cfg.DryRun, "dry-run", false, "preview clusters without creating playlists")
 	flag.IntVar(&cfg.Limit, "limit", 5, "maximum playlists to create (0 = unlimited)")
 	flag.Parse()
@@ -53,6 +55,7 @@ func (c Config) toClusteringConfig() clustering.Config {
 	return clustering.Config{
 		GapThreshold:   time.Duration(c.GapDays) * 24 * time.Hour,
 		MinClusterSize: c.MinClusterSize,
+		MaxTracks:      c.MaxTracks,
 	}
 }
 
@@ -123,6 +126,9 @@ func run(cfg Config) error {
 	clusterCfg := cfg.toClusteringConfig()
 	eras, outliers := clustering.DetectEras(tracks, clusterCfg)
 
+	// Split large eras at natural gap boundaries
+	eras = clustering.SplitLargeEras(eras, clusterCfg.MaxTracks)
+
 	// Reverse eras so most recent comes first
 	slices.Reverse(eras)
 
@@ -154,6 +160,11 @@ func run(cfg Config) error {
 		startDate := era.StartDate.Format("2006-01-02")
 		endDate := era.EndDate.Format("2006-01-02")
 		playlistName := fmt.Sprintf("%s to %s", startDate, endDate)
+
+		// Add split suffix if this era was split from a larger era
+		if era.SplitTotal > 0 {
+			playlistName = fmt.Sprintf("%s (%d/%d)", playlistName, era.SplitIndex, era.SplitTotal)
+		}
 
 		// Create the playlist (private, no description)
 		playlistID, err := client.CreatePlaylist(ctx, playlistName, "", false)

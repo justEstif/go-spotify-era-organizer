@@ -64,8 +64,14 @@ func formatEra(num int, era Era) string {
 		trackWord = "tracks"
 	}
 
-	sb.WriteString(fmt.Sprintf("Era %d: %s to %s (%d %s)\n",
-		num, startDate, endDate, len(era.Tracks), trackWord))
+	// Add split indicator if this era was split from a larger era
+	splitInfo := ""
+	if era.SplitTotal > 0 {
+		splitInfo = fmt.Sprintf(" [%d/%d]", era.SplitIndex, era.SplitTotal)
+	}
+
+	sb.WriteString(fmt.Sprintf("Era %d: %s to %s (%d %s)%s\n",
+		num, startDate, endDate, len(era.Tracks), trackWord, splitInfo))
 
 	// Show sample tracks (first 3)
 	sampleCount := min(sampleTrackCount, len(era.Tracks))
