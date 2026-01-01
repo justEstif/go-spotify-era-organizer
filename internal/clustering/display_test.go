@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func TestFormatEraSummary(t *testing.T) {
+func TestFormatMoodEraSummary(t *testing.T) {
 	// Helper to create tracks
 	makeTrack := func(name, artist string, daysAgo int) Track {
 		return Track{
@@ -17,21 +17,30 @@ func TestFormatEraSummary(t *testing.T) {
 		}
 	}
 
-	// Helper to create an era
-	makeEra := func(tracks []Track) Era {
+	// Helper to create a mood era
+	makeMoodEra := func(name string, tracks []Track, centroid map[string]float32) MoodEra {
 		if len(tracks) == 0 {
-			return Era{}
+			return MoodEra{Name: name, Centroid: centroid}
 		}
-		return Era{
+		return MoodEra{
+			Name:      name,
 			Tracks:    tracks,
+			Centroid:  centroid,
 			StartDate: tracks[0].AddedAt,
 			EndDate:   tracks[len(tracks)-1].AddedAt,
 		}
 	}
 
+	defaultCentroid := map[string]float32{
+		"energy":       0.75,
+		"valence":      0.65,
+		"danceability": 0.70,
+		"acousticness": 0.20,
+	}
+
 	tests := []struct {
 		name           string
-		eras           []Era
+		eras           []MoodEra
 		outliers       []Track
 		wantContains   []string
 		wantNotContain []string
@@ -41,7 +50,7 @@ func TestFormatEraSummary(t *testing.T) {
 			eras:     nil,
 			outliers: nil,
 			wantContains: []string{
-				"No eras found from 0 tracks",
+				"No mood eras found from 0 tracks",
 			},
 			wantNotContain: []string{
 				"outliers",
@@ -52,27 +61,29 @@ func TestFormatEraSummary(t *testing.T) {
 			eras:     nil,
 			outliers: []Track{makeTrack("Song1", "Artist1", 10)},
 			wantContains: []string{
-				"No eras found from 1 tracks",
+				"No mood eras found from 1 tracks",
 				"(1 outliers skipped)",
 			},
 		},
 		{
 			name: "single era with 3 tracks",
-			eras: []Era{
-				makeEra([]Track{
+			eras: []MoodEra{
+				makeMoodEra("Upbeat Party: Jan 1 - Jan 3, 2024", []Track{
 					makeTrack("Song1", "Artist1", 10),
 					makeTrack("Song2", "Artist2", 9),
 					makeTrack("Song3", "Artist3", 8),
-				}),
+				}, defaultCentroid),
 			},
 			outliers: nil,
 			wantContains: []string{
-				"Found 1 era from 3 tracks",
+				"Found 1 mood era from 3 tracks",
 				"Era 1:",
+				"Upbeat Party",
 				"(3 tracks)",
 				`"Song1" - Artist1`,
 				`"Song2" - Artist2`,
 				`"Song3" - Artist3`,
+				"Mood: Energy=75%",
 			},
 			wantNotContain: []string{
 				"and", // No "and N more" for exactly 3 tracks
@@ -81,18 +92,18 @@ func TestFormatEraSummary(t *testing.T) {
 		},
 		{
 			name: "single era with 5 tracks shows and N more",
-			eras: []Era{
-				makeEra([]Track{
+			eras: []MoodEra{
+				makeMoodEra("Chill & Happy: Feb 1 - Feb 5, 2024", []Track{
 					makeTrack("Song1", "Artist1", 10),
 					makeTrack("Song2", "Artist2", 9),
 					makeTrack("Song3", "Artist3", 8),
 					makeTrack("Song4", "Artist4", 7),
 					makeTrack("Song5", "Artist5", 6),
-				}),
+				}, defaultCentroid),
 			},
 			outliers: nil,
 			wantContains: []string{
-				"Found 1 era from 5 tracks",
+				"Found 1 mood era from 5 tracks",
 				`"Song1" - Artist1`,
 				`"Song2" - Artist2`,
 				`"Song3" - Artist3`,
@@ -105,17 +116,17 @@ func TestFormatEraSummary(t *testing.T) {
 		},
 		{
 			name: "multiple eras with outliers",
-			eras: []Era{
-				makeEra([]Track{
+			eras: []MoodEra{
+				makeMoodEra("Intense & Dark: Mar 1 - Mar 4, 2024", []Track{
 					makeTrack("Era1Song1", "Artist1", 30),
 					makeTrack("Era1Song2", "Artist2", 29),
 					makeTrack("Era1Song3", "Artist3", 28),
 					makeTrack("Era1Song4", "Artist4", 27),
-				}),
-				makeEra([]Track{
+				}, defaultCentroid),
+				makeMoodEra("Reflective & Melancholy: Apr 1 - Apr 2, 2024", []Track{
 					makeTrack("Era2Song1", "ArtistA", 10),
 					makeTrack("Era2Song2", "ArtistB", 9),
-				}),
+				}, defaultCentroid),
 			},
 			outliers: []Track{
 				makeTrack("Outlier1", "OutlierArtist", 50),
@@ -123,12 +134,14 @@ func TestFormatEraSummary(t *testing.T) {
 				makeTrack("Outlier3", "OutlierArtist", 52),
 			},
 			wantContains: []string{
-				"Found 2 eras from 9 tracks",
+				"Found 2 mood eras from 9 tracks",
 				"(3 outliers skipped)",
 				"Era 1:",
+				"Intense & Dark",
 				"(4 tracks)",
 				"... and 1 more",
 				"Era 2:",
+				"Reflective & Melancholy",
 				"(2 tracks)",
 				`"Era2Song1" - ArtistA`,
 			},
@@ -138,31 +151,49 @@ func TestFormatEraSummary(t *testing.T) {
 		},
 		{
 			name: "single track era uses singular",
-			eras: []Era{
-				makeEra([]Track{
+			eras: []MoodEra{
+				makeMoodEra("Upbeat Party: May 1, 2024", []Track{
 					makeTrack("OnlySong", "OnlyArtist", 5),
-				}),
+				}, defaultCentroid),
 			},
 			outliers: nil,
 			wantContains: []string{
 				"(1 track)",
 			},
 		},
+		{
+			name: "shows mood indicators",
+			eras: []MoodEra{
+				makeMoodEra("Test Era", []Track{
+					makeTrack("Song1", "Artist1", 1),
+					makeTrack("Song2", "Artist2", 2),
+				}, map[string]float32{
+					"energy":       0.85,
+					"valence":      0.60,
+					"danceability": 0.75,
+					"acousticness": 0.10,
+				}),
+			},
+			outliers: nil,
+			wantContains: []string{
+				"Mood: Energy=85% Valence=60% Danceability=75%",
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := FormatEraSummary(tt.eras, tt.outliers)
+			got := FormatMoodEraSummary(tt.eras, tt.outliers)
 
 			for _, want := range tt.wantContains {
 				if !strings.Contains(got, want) {
-					t.Errorf("FormatEraSummary() missing expected content %q\nGot:\n%s", want, got)
+					t.Errorf("FormatMoodEraSummary() missing expected content %q\nGot:\n%s", want, got)
 				}
 			}
 
 			for _, notWant := range tt.wantNotContain {
 				if strings.Contains(got, notWant) {
-					t.Errorf("FormatEraSummary() contains unexpected content %q\nGot:\n%s", notWant, got)
+					t.Errorf("FormatMoodEraSummary() contains unexpected content %q\nGot:\n%s", notWant, got)
 				}
 			}
 		})

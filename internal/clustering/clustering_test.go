@@ -5,155 +5,115 @@ import (
 	"time"
 )
 
-func TestDetectEras(t *testing.T) {
-	baseTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-	day := 24 * time.Hour
+func TestDetectMoodEras(t *testing.T) {
+	// Helper to create a track with audio features
+	makeTrack := func(id string, energy, valence, danceability, acousticness float32) Track {
+		return Track{
+			ID:           id,
+			Name:         "Track " + id,
+			Artist:       "Artist",
+			AddedAt:      time.Now(),
+			Energy:       &energy,
+			Valence:      &valence,
+			Danceability: &danceability,
+			Acousticness: &acousticness,
+		}
+	}
+
+	// Helper to create a track without audio features
+	makeTrackNoFeatures := func(id string) Track {
+		return Track{
+			ID:      id,
+			Name:    "Track " + id,
+			Artist:  "Artist",
+			AddedAt: time.Now(),
+		}
+	}
 
 	tests := []struct {
 		name         string
 		tracks       []Track
-		cfg          Config
+		cfg          MoodConfig
 		wantEras     int
 		wantOutliers int
 	}{
 		{
 			name:         "empty input",
-			tracks:       []Track{},
-			cfg:          DefaultConfig(),
+			tracks:       nil,
+			cfg:          DefaultMoodConfig(),
 			wantEras:     0,
 			wantOutliers: 0,
 		},
 		{
-			name: "single track becomes outlier",
+			name: "fewer tracks than clusters",
 			tracks: []Track{
-				{ID: "1", AddedAt: baseTime},
+				makeTrack("1", 0.8, 0.7, 0.6, 0.2),
+				makeTrack("2", 0.3, 0.4, 0.5, 0.8),
 			},
-			cfg:          DefaultConfig(),
+			cfg:          MoodConfig{NumClusters: 5, MinClusterSize: 1},
 			wantEras:     0,
-			wantOutliers: 1,
+			wantOutliers: 2,
 		},
 		{
-			name: "all continuous - one era",
+			name: "tracks without features become outliers",
 			tracks: []Track{
-				{ID: "1", AddedAt: baseTime},
-				{ID: "2", AddedAt: baseTime.Add(1 * day)},
-				{ID: "3", AddedAt: baseTime.Add(2 * day)},
-				{ID: "4", AddedAt: baseTime.Add(3 * day)},
-				{ID: "5", AddedAt: baseTime.Add(4 * day)},
+				makeTrackNoFeatures("1"),
+				makeTrackNoFeatures("2"),
+				makeTrackNoFeatures("3"),
 			},
-			cfg:          DefaultConfig(),
-			wantEras:     1,
-			wantOutliers: 0,
+			cfg:          DefaultMoodConfig(),
+			wantEras:     0,
+			wantOutliers: 3,
 		},
 		{
-			name: "clear split - two eras",
+			name: "basic clustering with 2 clusters",
 			tracks: []Track{
-				{ID: "1", AddedAt: baseTime},
-				{ID: "2", AddedAt: baseTime.Add(1 * day)},
-				{ID: "3", AddedAt: baseTime.Add(2 * day)},
-				// 10-day gap here
-				{ID: "4", AddedAt: baseTime.Add(12 * day)},
-				{ID: "5", AddedAt: baseTime.Add(13 * day)},
-				{ID: "6", AddedAt: baseTime.Add(14 * day)},
+				// High energy cluster
+				makeTrack("1", 0.9, 0.8, 0.7, 0.1),
+				makeTrack("2", 0.85, 0.75, 0.65, 0.15),
+				makeTrack("3", 0.88, 0.82, 0.72, 0.12),
+				// Low energy cluster
+				makeTrack("4", 0.2, 0.3, 0.4, 0.9),
+				makeTrack("5", 0.25, 0.35, 0.45, 0.85),
+				makeTrack("6", 0.22, 0.32, 0.42, 0.88),
 			},
-			cfg:          DefaultConfig(),
+			cfg:          MoodConfig{NumClusters: 2, MinClusterSize: 2},
 			wantEras:     2,
 			wantOutliers: 0,
 		},
 		{
-			name: "outlier in middle",
+			name: "mixed tracks with some missing features",
 			tracks: []Track{
-				{ID: "1", AddedAt: baseTime},
-				{ID: "2", AddedAt: baseTime.Add(1 * day)},
-				{ID: "3", AddedAt: baseTime.Add(2 * day)},
-				// gap
-				{ID: "4", AddedAt: baseTime.Add(12 * day)}, // isolated
-				// gap
-				{ID: "5", AddedAt: baseTime.Add(22 * day)},
-				{ID: "6", AddedAt: baseTime.Add(23 * day)},
-				{ID: "7", AddedAt: baseTime.Add(24 * day)},
+				makeTrack("1", 0.9, 0.8, 0.7, 0.1),
+				makeTrack("2", 0.85, 0.75, 0.65, 0.15),
+				makeTrack("3", 0.88, 0.82, 0.72, 0.12),
+				makeTrackNoFeatures("4"),
+				makeTrackNoFeatures("5"),
 			},
-			cfg:          DefaultConfig(),
-			wantEras:     2,
-			wantOutliers: 1,
-		},
-		{
-			name: "exactly at threshold splits",
-			tracks: []Track{
-				{ID: "1", AddedAt: baseTime},
-				{ID: "2", AddedAt: baseTime.Add(1 * day)},
-				{ID: "3", AddedAt: baseTime.Add(2 * day)},
-				{ID: "4", AddedAt: baseTime.Add(2*day + 7*day)}, // exactly 7 days from previous
-				{ID: "5", AddedAt: baseTime.Add(2*day + 8*day)},
-				{ID: "6", AddedAt: baseTime.Add(2*day + 9*day)},
-			},
-			cfg:          DefaultConfig(),
-			wantEras:     2,
-			wantOutliers: 0,
-		},
-		{
-			name: "just under threshold stays together",
-			tracks: []Track{
-				{ID: "1", AddedAt: baseTime},
-				{ID: "2", AddedAt: baseTime.Add(1 * day)},
-				{ID: "3", AddedAt: baseTime.Add(2 * day)},
-				{ID: "4", AddedAt: baseTime.Add(2*day + 7*day - time.Second)}, // just under 7 days
-				{ID: "5", AddedAt: baseTime.Add(2*day + 8*day)},
-			},
-			cfg:          DefaultConfig(),
+			cfg:          MoodConfig{NumClusters: 1, MinClusterSize: 2},
 			wantEras:     1,
-			wantOutliers: 0,
+			wantOutliers: 2, // The two tracks without features
 		},
 		{
-			name: "unsorted input gets sorted",
+			name: "small clusters become outliers",
 			tracks: []Track{
-				{ID: "3", AddedAt: baseTime.Add(2 * day)},
-				{ID: "1", AddedAt: baseTime},
-				{ID: "2", AddedAt: baseTime.Add(1 * day)},
+				// Main cluster
+				makeTrack("1", 0.9, 0.8, 0.7, 0.1),
+				makeTrack("2", 0.85, 0.75, 0.65, 0.15),
+				makeTrack("3", 0.88, 0.82, 0.72, 0.12),
+				makeTrack("4", 0.87, 0.79, 0.69, 0.13),
+				// Single outlier track (very different)
+				makeTrack("5", 0.1, 0.1, 0.1, 0.9),
 			},
-			cfg:          DefaultConfig(),
+			cfg:          MoodConfig{NumClusters: 2, MinClusterSize: 3},
 			wantEras:     1,
-			wantOutliers: 0,
-		},
-		{
-			name: "custom config - larger gap threshold",
-			tracks: []Track{
-				{ID: "1", AddedAt: baseTime},
-				{ID: "2", AddedAt: baseTime.Add(1 * day)},
-				{ID: "3", AddedAt: baseTime.Add(2 * day)},
-				// 10-day gap - would split with default, but not with 14-day threshold
-				{ID: "4", AddedAt: baseTime.Add(12 * day)},
-				{ID: "5", AddedAt: baseTime.Add(13 * day)},
-				{ID: "6", AddedAt: baseTime.Add(14 * day)},
-			},
-			cfg: Config{
-				GapThreshold:   14 * 24 * time.Hour,
-				MinClusterSize: 3,
-			},
-			wantEras:     1,
-			wantOutliers: 0,
-		},
-		{
-			name: "custom config - smaller min cluster size",
-			tracks: []Track{
-				{ID: "1", AddedAt: baseTime},
-				{ID: "2", AddedAt: baseTime.Add(1 * day)},
-				// gap
-				{ID: "3", AddedAt: baseTime.Add(12 * day)},
-				{ID: "4", AddedAt: baseTime.Add(13 * day)},
-			},
-			cfg: Config{
-				GapThreshold:   7 * 24 * time.Hour,
-				MinClusterSize: 2,
-			},
-			wantEras:     2,
-			wantOutliers: 0,
+			wantOutliers: 1, // The single track cluster becomes an outlier
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			eras, outliers := DetectEras(tt.tracks, tt.cfg)
+			eras, outliers := DetectMoodEras(tt.tracks, tt.cfg)
 
 			if len(eras) != tt.wantEras {
 				t.Errorf("got %d eras, want %d", len(eras), tt.wantEras)
@@ -162,347 +122,128 @@ func TestDetectEras(t *testing.T) {
 			if len(outliers) != tt.wantOutliers {
 				t.Errorf("got %d outliers, want %d", len(outliers), tt.wantOutliers)
 			}
+
+			// Verify all tracks are accounted for
+			totalTracks := len(outliers)
+			for _, era := range eras {
+				totalTracks += len(era.Tracks)
+			}
+			if totalTracks != len(tt.tracks) {
+				t.Errorf("total tracks = %d, want %d", totalTracks, len(tt.tracks))
+			}
 		})
 	}
 }
 
-func TestDefaultConfig(t *testing.T) {
-	cfg := DefaultConfig()
+func TestDefaultMoodConfig(t *testing.T) {
+	cfg := DefaultMoodConfig()
 
-	if cfg.GapThreshold != 7*24*time.Hour {
-		t.Errorf("GapThreshold = %v, want 7 days", cfg.GapThreshold)
+	if cfg.NumClusters != 3 {
+		t.Errorf("NumClusters = %d, want 3", cfg.NumClusters)
 	}
 
 	if cfg.MinClusterSize != 3 {
 		t.Errorf("MinClusterSize = %d, want 3", cfg.MinClusterSize)
 	}
-
-	if cfg.MaxTracks != 30 {
-		t.Errorf("MaxTracks = %d, want 30", cfg.MaxTracks)
-	}
-
-	if cfg.OutlierMode != OutlierModeSkip {
-		t.Errorf("OutlierMode = %s, want %s", cfg.OutlierMode, OutlierModeSkip)
-	}
 }
 
-func TestEraDateBoundaries(t *testing.T) {
+func TestMoodEraHasDateRange(t *testing.T) {
 	baseTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-	day := 24 * time.Hour
 
 	tracks := []Track{
-		{ID: "1", AddedAt: baseTime},
-		{ID: "2", AddedAt: baseTime.Add(1 * day)},
-		{ID: "3", AddedAt: baseTime.Add(2 * day)},
+		{
+			ID:           "1",
+			Name:         "First",
+			Artist:       "Artist",
+			AddedAt:      baseTime,
+			Energy:       ptr(0.8),
+			Valence:      ptr(0.7),
+			Danceability: ptr(0.6),
+			Acousticness: ptr(0.2),
+		},
+		{
+			ID:           "2",
+			Name:         "Second",
+			Artist:       "Artist",
+			AddedAt:      baseTime.Add(24 * time.Hour),
+			Energy:       ptr(0.85),
+			Valence:      ptr(0.75),
+			Danceability: ptr(0.65),
+			Acousticness: ptr(0.25),
+		},
+		{
+			ID:           "3",
+			Name:         "Third",
+			Artist:       "Artist",
+			AddedAt:      baseTime.Add(48 * time.Hour),
+			Energy:       ptr(0.82),
+			Valence:      ptr(0.72),
+			Danceability: ptr(0.62),
+			Acousticness: ptr(0.22),
+		},
 	}
 
-	eras, _ := DetectEras(tracks, DefaultConfig())
+	eras, _ := DetectMoodEras(tracks, MoodConfig{NumClusters: 1, MinClusterSize: 1})
 
 	if len(eras) != 1 {
 		t.Fatalf("expected 1 era, got %d", len(eras))
 	}
 
 	era := eras[0]
-	if !era.StartDate.Equal(baseTime) {
-		t.Errorf("StartDate = %v, want %v", era.StartDate, baseTime)
+
+	// Check that date range is set (earliest to latest)
+	if era.StartDate.After(era.EndDate) {
+		t.Errorf("StartDate %v should be before or equal to EndDate %v", era.StartDate, era.EndDate)
 	}
 
-	expectedEnd := baseTime.Add(2 * day)
-	if !era.EndDate.Equal(expectedEnd) {
-		t.Errorf("EndDate = %v, want %v", era.EndDate, expectedEnd)
+	// Check that name contains date info
+	if era.Name == "" {
+		t.Error("era Name should not be empty")
 	}
 }
 
-func TestEraTrackOrder(t *testing.T) {
-	baseTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-	day := 24 * time.Hour
-
-	// Input in reverse order
+func TestMoodEraHasCentroid(t *testing.T) {
 	tracks := []Track{
-		{ID: "3", Name: "Third", AddedAt: baseTime.Add(2 * day)},
-		{ID: "1", Name: "First", AddedAt: baseTime},
-		{ID: "2", Name: "Second", AddedAt: baseTime.Add(1 * day)},
+		{
+			ID:           "1",
+			Name:         "Track 1",
+			Artist:       "Artist",
+			AddedAt:      time.Now(),
+			Energy:       ptr(0.8),
+			Valence:      ptr(0.7),
+			Danceability: ptr(0.6),
+			Acousticness: ptr(0.2),
+		},
+		{
+			ID:           "2",
+			Name:         "Track 2",
+			Artist:       "Artist",
+			AddedAt:      time.Now(),
+			Energy:       ptr(0.9),
+			Valence:      ptr(0.8),
+			Danceability: ptr(0.7),
+			Acousticness: ptr(0.1),
+		},
 	}
 
-	eras, _ := DetectEras(tracks, DefaultConfig())
+	eras, _ := DetectMoodEras(tracks, MoodConfig{NumClusters: 1, MinClusterSize: 1})
 
 	if len(eras) != 1 {
 		t.Fatalf("expected 1 era, got %d", len(eras))
 	}
 
-	// Verify tracks are sorted by AddedAt within era
 	era := eras[0]
-	if era.Tracks[0].ID != "1" {
-		t.Errorf("first track ID = %s, want 1", era.Tracks[0].ID)
-	}
-	if era.Tracks[1].ID != "2" {
-		t.Errorf("second track ID = %s, want 2", era.Tracks[1].ID)
-	}
-	if era.Tracks[2].ID != "3" {
-		t.Errorf("third track ID = %s, want 3", era.Tracks[2].ID)
+
+	// Check centroid has all expected keys
+	expectedKeys := []string{"energy", "valence", "danceability", "acousticness"}
+	for _, key := range expectedKeys {
+		if _, ok := era.Centroid[key]; !ok {
+			t.Errorf("centroid missing key %q", key)
+		}
 	}
 }
 
-func TestDetectErasDoesNotMutateInput(t *testing.T) {
-	baseTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-	day := 24 * time.Hour
-
-	// Input in reverse order
-	tracks := []Track{
-		{ID: "3", AddedAt: baseTime.Add(2 * day)},
-		{ID: "1", AddedAt: baseTime},
-		{ID: "2", AddedAt: baseTime.Add(1 * day)},
-	}
-
-	// Save original order
-	originalFirst := tracks[0].ID
-
-	DetectEras(tracks, DefaultConfig())
-
-	// Verify input slice wasn't modified
-	if tracks[0].ID != originalFirst {
-		t.Errorf("input slice was mutated: first element ID = %s, want %s", tracks[0].ID, originalFirst)
-	}
-}
-
-func TestSplitLargeEras(t *testing.T) {
-	baseTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-	hour := time.Hour
-
-	// Helper to create N tracks with varying gaps
-	createTracks := func(n int, gaps []time.Duration) []Track {
-		tracks := make([]Track, n)
-		current := baseTime
-		for i := 0; i < n; i++ {
-			tracks[i] = Track{
-				ID:      string(rune('A' + i)),
-				AddedAt: current,
-			}
-			if i < len(gaps) {
-				current = current.Add(gaps[i])
-			} else {
-				current = current.Add(1 * hour) // default 1 hour gap
-			}
-		}
-		return tracks
-	}
-
-	tests := []struct {
-		name          string
-		era           Era
-		maxTracks     int
-		wantSubEras   int
-		wantSplitInfo bool // whether sub-eras should have SplitIndex/SplitTotal set
-	}{
-		{
-			name: "no split needed - under limit",
-			era: Era{
-				Tracks:    createTracks(5, nil),
-				StartDate: baseTime,
-				EndDate:   baseTime.Add(4 * hour),
-			},
-			maxTracks:     10,
-			wantSubEras:   1,
-			wantSplitInfo: false,
-		},
-		{
-			name: "no split needed - exactly at limit",
-			era: Era{
-				Tracks:    createTracks(10, nil),
-				StartDate: baseTime,
-				EndDate:   baseTime.Add(9 * hour),
-			},
-			maxTracks:     10,
-			wantSubEras:   1,
-			wantSplitInfo: false,
-		},
-		{
-			name: "split into 2 - just over limit",
-			era: Era{
-				Tracks: createTracks(12, []time.Duration{
-					1 * hour, 1 * hour, 1 * hour, 1 * hour,
-					5 * hour, // largest gap at index 5
-					1 * hour, 1 * hour, 1 * hour, 1 * hour, 1 * hour, 1 * hour,
-				}),
-				StartDate: baseTime,
-				EndDate:   baseTime.Add(15 * hour),
-			},
-			maxTracks:     10,
-			wantSubEras:   2,
-			wantSplitInfo: true,
-		},
-		{
-			name: "split into 3 - with natural gaps",
-			era: Era{
-				Tracks: createTracks(25, []time.Duration{
-					1 * hour, 1 * hour, 1 * hour, 1 * hour, 1 * hour, 1 * hour, 1 * hour,
-					8 * hour, // gap 1 at index 8
-					1 * hour, 1 * hour, 1 * hour, 1 * hour, 1 * hour, 1 * hour, 1 * hour,
-					6 * hour, // gap 2 at index 16
-					1 * hour, 1 * hour, 1 * hour, 1 * hour, 1 * hour, 1 * hour, 1 * hour, 1 * hour,
-				}),
-				StartDate: baseTime,
-				EndDate:   baseTime.Add(30 * hour),
-			},
-			maxTracks:     10,
-			wantSubEras:   3,
-			wantSplitInfo: true,
-		},
-		{
-			name: "maxTracks 0 means no limit",
-			era: Era{
-				Tracks:    createTracks(100, nil),
-				StartDate: baseTime,
-				EndDate:   baseTime.Add(99 * hour),
-			},
-			maxTracks:     0,
-			wantSubEras:   1,
-			wantSplitInfo: false,
-		},
-		{
-			name: "maxTracks negative means no limit",
-			era: Era{
-				Tracks:    createTracks(100, nil),
-				StartDate: baseTime,
-				EndDate:   baseTime.Add(99 * hour),
-			},
-			maxTracks:     -5,
-			wantSubEras:   1,
-			wantSplitInfo: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			eras := []Era{tt.era}
-			result := SplitLargeEras(eras, tt.maxTracks)
-
-			if len(result) != tt.wantSubEras {
-				t.Errorf("got %d sub-eras, want %d", len(result), tt.wantSubEras)
-			}
-
-			if tt.wantSplitInfo && len(result) > 1 {
-				for i, era := range result {
-					if era.SplitIndex != i+1 {
-						t.Errorf("sub-era %d: SplitIndex = %d, want %d", i, era.SplitIndex, i+1)
-					}
-					if era.SplitTotal != tt.wantSubEras {
-						t.Errorf("sub-era %d: SplitTotal = %d, want %d", i, era.SplitTotal, tt.wantSubEras)
-					}
-				}
-			}
-
-			if !tt.wantSplitInfo && len(result) == 1 {
-				if result[0].SplitIndex != 0 || result[0].SplitTotal != 0 {
-					t.Errorf("unsplit era should have SplitIndex=0, SplitTotal=0, got %d, %d",
-						result[0].SplitIndex, result[0].SplitTotal)
-				}
-			}
-
-			// Verify all tracks are preserved
-			totalTracks := 0
-			for _, era := range result {
-				totalTracks += len(era.Tracks)
-			}
-			if totalTracks != len(tt.era.Tracks) {
-				t.Errorf("total tracks = %d, want %d", totalTracks, len(tt.era.Tracks))
-			}
-		})
-	}
-}
-
-func TestSplitLargeErasNaturalGaps(t *testing.T) {
-	baseTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-	hour := time.Hour
-
-	// Create 20 tracks with clear gaps at positions 7 and 14
-	tracks := make([]Track, 20)
-	current := baseTime
-	for i := 0; i < 20; i++ {
-		tracks[i] = Track{
-			ID:      string(rune('A' + i)),
-			AddedAt: current,
-		}
-		if i == 6 {
-			current = current.Add(10 * hour) // Big gap after track 7
-		} else if i == 13 {
-			current = current.Add(8 * hour) // Second big gap after track 14
-		} else {
-			current = current.Add(1 * hour)
-		}
-	}
-
-	era := Era{
-		Tracks:    tracks,
-		StartDate: tracks[0].AddedAt,
-		EndDate:   tracks[len(tracks)-1].AddedAt,
-	}
-
-	result := SplitLargeEras([]Era{era}, 8)
-
-	// Should split into 3 sub-eras at the natural gap points
-	if len(result) != 3 {
-		t.Fatalf("got %d sub-eras, want 3", len(result))
-	}
-
-	// First sub-era should have tracks 0-6 (7 tracks)
-	if len(result[0].Tracks) != 7 {
-		t.Errorf("first sub-era has %d tracks, want 7", len(result[0].Tracks))
-	}
-
-	// Second sub-era should have tracks 7-13 (7 tracks)
-	if len(result[1].Tracks) != 7 {
-		t.Errorf("second sub-era has %d tracks, want 7", len(result[1].Tracks))
-	}
-
-	// Third sub-era should have tracks 14-19 (6 tracks)
-	if len(result[2].Tracks) != 6 {
-		t.Errorf("third sub-era has %d tracks, want 6", len(result[2].Tracks))
-	}
-}
-
-func TestSplitLargeErasPreservesSmallEras(t *testing.T) {
-	baseTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-	hour := time.Hour
-
-	smallEra := Era{
-		Tracks: []Track{
-			{ID: "1", AddedAt: baseTime},
-			{ID: "2", AddedAt: baseTime.Add(1 * hour)},
-			{ID: "3", AddedAt: baseTime.Add(2 * hour)},
-		},
-		StartDate: baseTime,
-		EndDate:   baseTime.Add(2 * hour),
-	}
-
-	largeTracks := make([]Track, 50)
-	for i := 0; i < 50; i++ {
-		largeTracks[i] = Track{
-			ID:      string(rune('A' + i)),
-			AddedAt: baseTime.Add(time.Duration(100+i) * hour),
-		}
-	}
-	largeEra := Era{
-		Tracks:    largeTracks,
-		StartDate: largeTracks[0].AddedAt,
-		EndDate:   largeTracks[len(largeTracks)-1].AddedAt,
-	}
-
-	eras := []Era{smallEra, largeEra}
-	result := SplitLargeEras(eras, 20)
-
-	// Small era should be unchanged (1 era)
-	// Large era should be split (50/20 = 3 eras)
-	// Total: 4 eras
-	if len(result) != 4 {
-		t.Errorf("got %d eras, want 4", len(result))
-	}
-
-	// First era should be the small one, unchanged
-	if len(result[0].Tracks) != 3 {
-		t.Errorf("first era (small) has %d tracks, want 3", len(result[0].Tracks))
-	}
-	if result[0].SplitIndex != 0 || result[0].SplitTotal != 0 {
-		t.Errorf("small era should not have split info set")
-	}
+// ptr is a helper to create a pointer to a float32
+func ptr(f float32) *float32 {
+	return &f
 }

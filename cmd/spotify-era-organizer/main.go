@@ -1,4 +1,4 @@
-// Command spotify-era-organizer analyzes Spotify liked songs and creates era-based playlists.
+// Command spotify-era-organizer analyzes Spotify liked songs and creates mood-based playlists.
 package main
 
 import (
@@ -7,8 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"slices"
-	"time"
 
 	"github.com/justestif/go-spotify-era-organizer/internal/auth"
 	"github.com/justestif/go-spotify-era-organizer/internal/clustering"
@@ -17,9 +15,8 @@ import (
 
 // Config holds CLI configuration options.
 type Config struct {
-	GapDays        int  // Gap threshold in days to split eras
+	NumClusters    int  // Number of mood-based clusters to create
 	MinClusterSize int  // Minimum tracks per era
-	MaxTracks      int  // Maximum tracks per era (0 = no limit)
 	DryRun         bool // Preview mode (no playlist creation)
 	Limit          int  // Maximum playlists to create (0 = unlimited)
 }
@@ -27,19 +24,18 @@ type Config struct {
 // parseFlags parses CLI flags and returns configuration.
 func parseFlags() Config {
 	cfg := Config{}
-	flag.IntVar(&cfg.GapDays, "gap", 7, "gap threshold in days to split eras")
+	flag.IntVar(&cfg.NumClusters, "clusters", 3, "number of mood-based clusters to create")
 	flag.IntVar(&cfg.MinClusterSize, "min-size", 3, "minimum tracks per era")
-	flag.IntVar(&cfg.MaxTracks, "max-tracks", 30, "maximum tracks per era, splits large eras at natural gaps (0 = no limit)")
 	flag.BoolVar(&cfg.DryRun, "dry-run", false, "preview clusters without creating playlists")
-	flag.IntVar(&cfg.Limit, "limit", 5, "maximum playlists to create (0 = unlimited)")
+	flag.IntVar(&cfg.Limit, "limit", 0, "maximum playlists to create (0 = unlimited)")
 	flag.Parse()
 	return cfg
 }
 
 // validate checks that configuration values are valid.
 func (c Config) validate() error {
-	if c.GapDays < 1 {
-		return fmt.Errorf("gap must be at least 1 day, got %d", c.GapDays)
+	if c.NumClusters < 1 {
+		return fmt.Errorf("clusters must be at least 1, got %d", c.NumClusters)
 	}
 	if c.MinClusterSize < 1 {
 		return fmt.Errorf("min-size must be at least 1, got %d", c.MinClusterSize)
@@ -50,12 +46,11 @@ func (c Config) validate() error {
 	return nil
 }
 
-// toClusteringConfig converts CLI config to clustering.Config.
-func (c Config) toClusteringConfig() clustering.Config {
-	return clustering.Config{
-		GapThreshold:   time.Duration(c.GapDays) * 24 * time.Hour,
+// toMoodConfig converts CLI config to clustering.MoodConfig.
+func (c Config) toMoodConfig() clustering.MoodConfig {
+	return clustering.MoodConfig{
+		NumClusters:    c.NumClusters,
 		MinClusterSize: c.MinClusterSize,
-		MaxTracks:      c.MaxTracks,
 	}
 }
 
@@ -121,16 +116,18 @@ func run(cfg Config) error {
 		return nil
 	}
 
-	// Detect eras using CLI config
-	fmt.Println("\nDetecting eras...")
-	clusterCfg := cfg.toClusteringConfig()
-	eras, outliers := clustering.DetectEras(tracks, clusterCfg)
+	fmt.Printf("Found %d liked songs.\n", len(tracks))
 
-	// Split large eras at natural gap boundaries
-	eras = clustering.SplitLargeEras(eras, clusterCfg.MaxTracks)
+	// Fetch audio features for mood-based clustering
+	fmt.Println("\nFetching audio features...")
+	if err := client.FetchAudioFeatures(ctx, tracks); err != nil {
+		return fmt.Errorf("fetching audio features: %w", err)
+	}
 
-	// Reverse eras so most recent comes first
-	slices.Reverse(eras)
+	// Detect mood-based eras
+	fmt.Println("\nAnalyzing moods and clustering tracks...")
+	moodCfg := cfg.toMoodConfig()
+	eras, outliers := clustering.DetectMoodEras(tracks, moodCfg)
 
 	// Apply limit if set
 	totalEras := len(eras)
@@ -141,7 +138,7 @@ func run(cfg Config) error {
 
 	// Display summary
 	fmt.Println()
-	fmt.Print(clustering.FormatEraSummary(eras, outliers))
+	fmt.Print(clustering.FormatMoodEraSummary(eras, outliers))
 
 	if cfg.DryRun {
 		fmt.Println("\nDry-run mode: no playlists created.")
@@ -156,15 +153,8 @@ func run(cfg Config) error {
 
 	fmt.Println("\nCreating playlists...")
 	for i, era := range eras {
-		// Generate playlist name with date range
-		startDate := era.StartDate.Format("2006-01-02")
-		endDate := era.EndDate.Format("2006-01-02")
-		playlistName := fmt.Sprintf("%s to %s", startDate, endDate)
-
-		// Add split suffix if this era was split from a larger era
-		if era.SplitTotal > 0 {
-			playlistName = fmt.Sprintf("%s (%d/%d)", playlistName, era.SplitIndex, era.SplitTotal)
-		}
+		// Use the mood-based era name directly (includes date range)
+		playlistName := era.Name
 
 		// Create the playlist (private, no description)
 		playlistID, err := client.CreatePlaylist(ctx, playlistName, "", false)

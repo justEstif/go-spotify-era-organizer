@@ -10,10 +10,9 @@ const (
 	dateFormat       = "2006-01-02"
 )
 
-// FormatEraSummary returns a human-readable summary of detected eras.
-// Shows date range, track count, and first 3 sample tracks for each era.
-// Outliers are summarized by count only.
-func FormatEraSummary(eras []Era, outliers []Track) string {
+// FormatMoodEraSummary returns a human-readable summary of detected mood-based eras.
+// Shows mood name, date range, track count, and sample tracks for each era.
+func FormatMoodEraSummary(eras []MoodEra, outliers []Track) string {
 	var sb strings.Builder
 
 	// Calculate total tracks
@@ -24,7 +23,7 @@ func FormatEraSummary(eras []Era, outliers []Track) string {
 
 	// Header
 	if len(eras) == 0 {
-		sb.WriteString(fmt.Sprintf("No eras found from %d tracks", totalTracks))
+		sb.WriteString(fmt.Sprintf("No mood eras found from %d tracks", totalTracks))
 		if len(outliers) > 0 {
 			sb.WriteString(fmt.Sprintf(" (%d outliers skipped)", len(outliers)))
 		}
@@ -37,7 +36,7 @@ func FormatEraSummary(eras []Era, outliers []Track) string {
 		eraWord = "eras"
 	}
 
-	sb.WriteString(fmt.Sprintf("Found %d %s from %d tracks", len(eras), eraWord, totalTracks))
+	sb.WriteString(fmt.Sprintf("Found %d mood %s from %d tracks", len(eras), eraWord, totalTracks))
 	if len(outliers) > 0 {
 		sb.WriteString(fmt.Sprintf(" (%d outliers skipped)", len(outliers)))
 	}
@@ -46,32 +45,31 @@ func FormatEraSummary(eras []Era, outliers []Track) string {
 	// Era details
 	for i, era := range eras {
 		sb.WriteString("\n")
-		sb.WriteString(formatEra(i+1, era))
+		sb.WriteString(formatMoodEra(i+1, era))
 	}
 
 	return sb.String()
 }
 
-// formatEra formats a single era with its sample tracks.
-func formatEra(num int, era Era) string {
+// formatMoodEra formats a single mood era with its sample tracks.
+func formatMoodEra(num int, era MoodEra) string {
 	var sb strings.Builder
-
-	startDate := era.StartDate.Format(dateFormat)
-	endDate := era.EndDate.Format(dateFormat)
 
 	trackWord := "track"
 	if len(era.Tracks) > 1 {
 		trackWord = "tracks"
 	}
 
-	// Add split indicator if this era was split from a larger era
-	splitInfo := ""
-	if era.SplitTotal > 0 {
-		splitInfo = fmt.Sprintf(" [%d/%d]", era.SplitIndex, era.SplitTotal)
-	}
+	// Era header with mood name
+	sb.WriteString(fmt.Sprintf("Era %d: %s (%d %s)\n", num, era.Name, len(era.Tracks), trackWord))
 
-	sb.WriteString(fmt.Sprintf("Era %d: %s to %s (%d %s)%s\n",
-		num, startDate, endDate, len(era.Tracks), trackWord, splitInfo))
+	// Show mood indicators
+	if len(era.Centroid) > 0 {
+		sb.WriteString(fmt.Sprintf("  Mood: Energy=%.0f%% Valence=%.0f%% Danceability=%.0f%%\n",
+			era.Centroid["energy"]*100,
+			era.Centroid["valence"]*100,
+			era.Centroid["danceability"]*100))
+	}
 
 	// Show sample tracks (first 3)
 	sampleCount := min(sampleTrackCount, len(era.Tracks))
