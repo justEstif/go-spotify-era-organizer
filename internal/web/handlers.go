@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/zmb3/spotify/v2"
 	spotifyauth "github.com/zmb3/spotify/v2/auth"
@@ -12,17 +14,54 @@ import (
 
 // Handlers contains HTTP handlers for the web application.
 type Handlers struct {
-	auth      *spotifyauth.Authenticator
-	sessions  *SessionStore
-	templates *Templates
+	auth        *spotifyauth.Authenticator
+	sessions    *SessionStore
+	templates   *Templates
+	oauthStates *oauthStateStore
+}
+
+// oauthStateStore stores OAuth state tokens server-side to avoid cookie issues
+// with localhost vs 127.0.0.1 during development.
+type oauthStateStore struct {
+	mu     sync.RWMutex
+	states map[string]time.Time
+}
+
+func newOAuthStateStore() *oauthStateStore {
+	return &oauthStateStore{
+		states: make(map[string]time.Time),
+	}
+}
+
+func (s *oauthStateStore) Set(state string) {
+	s.mu.Lock()
+	s.states[state] = time.Now()
+	s.mu.Unlock()
+}
+
+func (s *oauthStateStore) Validate(state string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	created, ok := s.states[state]
+	if !ok {
+		return false
+	}
+
+	// Remove the state (single use)
+	delete(s.states, state)
+
+	// Check if state is expired (5 minutes)
+	return time.Since(created) < 5*time.Minute
 }
 
 // NewHandlers creates a new Handlers instance.
 func NewHandlers(auth *spotifyauth.Authenticator, sessions *SessionStore, templates *Templates) *Handlers {
 	return &Handlers{
-		auth:      auth,
-		sessions:  sessions,
-		templates: templates,
+		auth:        auth,
+		sessions:    sessions,
+		templates:   templates,
+		oauthStates: newOAuthStateStore(),
 	}
 }
 
@@ -61,15 +100,8 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store state in cookie for validation on callback
-	http.SetCookie(w, &http.Cookie{
-		Name:     "oauth_state",
-		Value:    state,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   300, // 5 minutes
-	})
+	// Store state server-side (avoids cookie issues with localhost vs 127.0.0.1)
+	h.oauthStates.Set(state)
 
 	// Redirect to Spotify auth
 	url := h.auth.AuthURL(state)
@@ -78,31 +110,16 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 
 // Callback handles the OAuth callback from Spotify (GET /callback).
 func (h *Handlers) Callback(w http.ResponseWriter, r *http.Request) {
-	// Verify state
-	stateCookie, err := r.Cookie("oauth_state")
-	if err != nil {
-		http.Error(w, "Missing state cookie", http.StatusBadRequest)
-		return
-	}
-
-	state := r.URL.Query().Get("state")
-	if state != stateCookie.Value {
-		http.Error(w, "State mismatch", http.StatusBadRequest)
-		return
-	}
-
-	// Clear state cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:     "oauth_state",
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		MaxAge:   -1,
-	})
-
 	// Check for error from Spotify
 	if errMsg := r.URL.Query().Get("error"); errMsg != "" {
 		http.Error(w, fmt.Sprintf("Spotify auth error: %s", errMsg), http.StatusBadRequest)
+		return
+	}
+
+	// Verify state (stored server-side)
+	state := r.URL.Query().Get("state")
+	if state == "" || !h.oauthStates.Validate(state) {
+		http.Error(w, "Invalid or expired state. Please try logging in again.", http.StatusBadRequest)
 		return
 	}
 
