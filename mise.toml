@@ -1,0 +1,5 @@
+[tools]
+# NOTE: tools can be installed like so if needed globally
+# i don't want you to run go install global commands, just add them here an run mise up
+# "go:golang.org/x/tools/gopls" = "latest"
+"go:honnef.co/go/tools/cmd/staticcheck" = "latest"

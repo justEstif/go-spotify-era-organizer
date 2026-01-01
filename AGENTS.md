@@ -1,0 +1,163 @@
+# AGENTS.md - Go Spotify Era Organizer
+
+Guidance for AI coding agents working on this Go CLI project.
+
+## Project Overview
+
+CLI tool that analyzes Spotify liked songs, detects listening "eras" via temporal clustering, and generates playlists.
+
+**Stack:** Go 1.25.5+, `zmb3/spotify/v2`, `golang.org/x/oauth2`, single binary distribution.
+
+## Build, Test, Lint Commands
+
+```bash
+# Build
+go build -o spotify-era-organizer ./cmd/...
+go build ./...                              # Syntax check only
+
+# Test
+go test ./...                               # All tests
+go test -v ./...                            # Verbose
+go test -v -run TestFunctionName ./pkg      # Single test by name
+go test -v ./internal/clustering            # Single package
+go test -cover ./...                        # With coverage
+go test -race ./...                         # Race detector
+
+# Lint (ALWAYS run before committing)
+go fmt ./...                                # Format code
+go vet ./...                                # Check for issues
+staticcheck ./...                           # Static analysis
+golangci-lint run                           # Full linting
+
+# Dependencies
+go get github.com/example/package           # Add dependency
+go mod tidy                                 # Clean up go.mod/go.sum
+```
+
+## Tool Installation
+
+**Do NOT use `go install` globally.** Add tools to `mise.toml` and run `mise up`:
+
+```toml
+[tools]
+"go:golang.org/x/tools/gopls" = "latest"
+"go:honnef.co/go/tools/cmd/staticcheck" = "latest"
+"go:github.com/golangci/golangci-lint/cmd/golangci-lint" = "latest"
+```
+
+## Project Structure
+
+```
+cmd/spotify-era-organizer/main.go    # Entrypoint
+internal/auth/                        # OAuth2 authentication
+internal/spotify/                     # API client wrapper
+internal/clustering/                  # Era detection algorithm
+internal/playlist/                    # Playlist creation
+docs/                                 # Documentation
+```
+
+## Code Style
+
+### Imports (three groups, blank line separated)
+
+```go
+import (
+    "context"
+    "fmt"
+
+    "github.com/zmb3/spotify/v2"
+
+    "github.com/justestif/go-spotify-era-organizer/internal/clustering"
+)
+```
+
+### Naming Conventions
+
+| Element    | Style                          | Example                       |
+| ---------- | ------------------------------ | ----------------------------- |
+| Packages   | lowercase, single-word         | `clustering`, `auth`          |
+| Files      | lowercase, underscores         | `token_cache.go`              |
+| Exported   | PascalCase                     | `DetectEras`, `ClusterConfig` |
+| Unexported | camelCase                      | `calculateGap`, `tokenStore`  |
+| Interfaces | `-er` suffix for single-method | `Clusterer`, `TokenFetcher`   |
+| Acronyms   | Consistent case                | `HTTPClient`, `userID`        |
+
+### Error Handling
+
+```go
+// Always wrap errors with context
+result, err := doSomething()
+if err != nil {
+    return fmt.Errorf("doing something: %w", err)
+}
+
+// Define sentinel errors
+var ErrInvalidToken = errors.New("invalid token")
+
+// Use errors.Is/As for comparison
+if errors.Is(err, ErrNotFound) { ... }
+```
+
+### Functions
+
+```go
+// Context first, error last
+func ProcessTracks(ctx context.Context, fetcher TrackFetcher) (*Result, error)
+
+// Accept interfaces, return concrete types
+// Keep functions focused and small
+```
+
+### Testing (table-driven)
+
+```go
+func TestDetectEras(t *testing.T) {
+    tests := []struct {
+        name     string
+        input    []Track
+        gapDays  int
+        expected []Era
+    }{
+        {"single era", []Track{...}, 7, []Era{...}},
+    }
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            got := DetectEras(tt.input, tt.gapDays)
+            // assertions
+        })
+    }
+}
+```
+
+### Documentation
+
+```go
+// Package clustering implements era detection using gap-based clustering.
+package clustering
+
+// DetectEras groups tracks into temporal eras based on add dates.
+func DetectEras(tracks []Track, gapDays int) ([]Era, error)
+```
+
+## Task Tracking (Beads)
+
+```bash
+bd ready                    # Show ready issues
+bd show <id>               # View details
+bd create --title="..." --type=task --priority=2
+bd update <id> --status=in_progress
+bd close <id>
+bd sync --from-main        # Sync beads data
+```
+
+## Domain Patterns
+
+**OAuth:** Cache tokens in `~/.config/spotify-era-organizer/token.json`
+
+**Rate Limiting:** Implement exponential backoff, batch operations
+
+**Clustering:**
+
+- Gap threshold: 7-14 days (configurable)
+- Minimum cluster size: 3 songs
+- Sort tracks by `added_at` before processing
