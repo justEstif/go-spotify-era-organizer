@@ -161,3 +161,15 @@ bd sync --from-main        # Sync beads data
 - Gap threshold: 7-14 days (configurable)
 - Minimum cluster size: 3 songs
 - Sort tracks by `added_at` before processing
+
+## Frontend Development
+
+When building frontend, UI, web pages, or visual components, **always load the `brand-guidelines` skill first** to ensure consistent styling with the project's Liquid Vinyl visual identity.
+
+```
+/skill brand-guidelines
+```
+
+Key resources:
+- `.opencode/skill/brand-guidelines/SKILL.md` - Colors, typography, mood mapping, components
+- `docs/implementation-notes.md` - Go template + HTMX patterns
