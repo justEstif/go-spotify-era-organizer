@@ -1,3 +1,10 @@
 [tools]
 "npm:beads-ui" = "latest"
 "go:honnef.co/go/tools/cmd/staticcheck" = "latest"
+
+# set value in mise.local.toml and add to gitignore
+[env]
+SPOTIFY_ID = ""
+SPOTIFY_SECRET = ""
+LASTFM_API_KEY = ""
+LASTFM_SECRET = ""
