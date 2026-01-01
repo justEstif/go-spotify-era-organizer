@@ -9,7 +9,6 @@ import (
 	"os"
 
 	"github.com/justestif/go-spotify-era-organizer/internal/auth"
-	"github.com/justestif/go-spotify-era-organizer/internal/clustering"
 	"github.com/justestif/go-spotify-era-organizer/internal/spotify"
 )
 
@@ -44,23 +43,6 @@ func (c Config) validate() error {
 		return fmt.Errorf("limit must be non-negative, got %d", c.Limit)
 	}
 	return nil
-}
-
-// toMoodConfig converts CLI config to clustering.MoodConfig.
-func (c Config) toMoodConfig() clustering.MoodConfig {
-	return clustering.MoodConfig{
-		NumClusters:    c.NumClusters,
-		MinClusterSize: c.MinClusterSize,
-	}
-}
-
-// extractTrackIDs extracts Spotify track IDs from a slice of tracks.
-func extractTrackIDs(tracks []clustering.Track) []string {
-	ids := make([]string, len(tracks))
-	for i, t := range tracks {
-		ids[i] = t.ID
-	}
-	return ids
 }
 
 func main() {
@@ -118,59 +100,19 @@ func run(cfg Config) error {
 
 	fmt.Printf("Found %d liked songs.\n", len(tracks))
 
-	// Fetch audio features for mood-based clustering
-	fmt.Println("\nFetching audio features...")
-	if err := client.FetchAudioFeatures(ctx, tracks); err != nil {
-		return fmt.Errorf("fetching audio features: %w", err)
-	}
-
-	// Detect mood-based eras
-	fmt.Println("\nAnalyzing moods and clustering tracks...")
-	moodCfg := cfg.toMoodConfig()
-	eras, outliers := clustering.DetectMoodEras(tracks, moodCfg)
-
-	// Apply limit if set
-	totalEras := len(eras)
-	if cfg.Limit > 0 && len(eras) > cfg.Limit {
-		eras = eras[:cfg.Limit]
-		fmt.Printf("Showing %d of %d eras (use --limit=0 for all)\n", cfg.Limit, totalEras)
-	}
-
-	// Display summary
+	// DEPRECATED: Spotify Audio Features API
+	// The Audio Features API was deprecated by Spotify in November 2024 for new apps.
+	// Mood-based clustering is being migrated to use Last.fm tags instead.
+	// See: https://github.com/justestif/go-spotify-era-organizer/issues (V3 Epic)
 	fmt.Println()
-	fmt.Print(clustering.FormatMoodEraSummary(eras, outliers))
+	fmt.Println("=================================================================")
+	fmt.Println("NOTICE: Mood-based clustering is temporarily unavailable.")
+	fmt.Println()
+	fmt.Println("Spotify deprecated the Audio Features API in November 2024.")
+	fmt.Println("We are migrating to Last.fm tags for mood detection.")
+	fmt.Println()
+	fmt.Println("Please use the web UI (coming soon) or check back for updates.")
+	fmt.Println("=================================================================")
 
-	if cfg.DryRun {
-		fmt.Println("\nDry-run mode: no playlists created.")
-		return nil
-	}
-
-	// Create playlists for each era
-	if len(eras) == 0 {
-		fmt.Println("\nNo eras to create playlists for.")
-		return nil
-	}
-
-	fmt.Println("\nCreating playlists...")
-	for i, era := range eras {
-		// Use the mood-based era name directly (includes date range)
-		playlistName := era.Name
-
-		// Create the playlist (private, no description)
-		playlistID, err := client.CreatePlaylist(ctx, playlistName, "", false)
-		if err != nil {
-			return fmt.Errorf("creating playlist %q: %w", playlistName, err)
-		}
-
-		// Add tracks to the playlist
-		trackIDs := extractTrackIDs(era.Tracks)
-		if err := client.AddTracksToPlaylist(ctx, playlistID, trackIDs); err != nil {
-			return fmt.Errorf("adding tracks to playlist %q: %w", playlistName, err)
-		}
-
-		fmt.Printf("Created playlist %d/%d: %q (%d tracks)\n", i+1, len(eras), playlistName, len(era.Tracks))
-	}
-
-	fmt.Printf("\nDone! Created %d playlists.\n", len(eras))
 	return nil
 }
