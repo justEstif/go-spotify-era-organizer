@@ -63,12 +63,9 @@ func formatMoodEra(num int, era MoodEra) string {
 	// Era header with mood name
 	sb.WriteString(fmt.Sprintf("Era %d: %s (%d %s)\n", num, era.Name, len(era.Tracks), trackWord))
 
-	// Show mood indicators
-	if len(era.Centroid) > 0 {
-		sb.WriteString(fmt.Sprintf("  Mood: Energy=%.0f%% Valence=%.0f%% Danceability=%.0f%%\n",
-			era.Centroid["energy"]*100,
-			era.Centroid["valence"]*100,
-			era.Centroid["danceability"]*100))
+	// Show top tags
+	if len(era.TopTags) > 0 {
+		sb.WriteString(fmt.Sprintf("  Tags: %s\n", strings.Join(era.TopTags, ", ")))
 	}
 
 	// Show sample tracks (first 3)

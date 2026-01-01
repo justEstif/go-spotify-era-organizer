@@ -1,24 +1,21 @@
-// Package clustering implements mood-based clustering using audio features.
+// Package clustering implements tag-based mood clustering for music tracks.
 package clustering
 
 import (
 	"time"
 )
 
-// Track represents a song with its metadata and audio features.
+// Track represents a song with its metadata and tags.
 type Track struct {
 	ID      string
 	Name    string
 	Artist  string
 	AddedAt time.Time
-	// Audio features (nil if not fetched or unavailable)
-	Acousticness     *float32
-	Danceability     *float32
-	Energy           *float32
-	Instrumentalness *float32
-	Liveness         *float32
-	Loudness         *float32
-	Speechiness      *float32
-	Tempo            *float32
-	Valence          *float32
+	Tags    []Tag // Tags from Last.fm (empty if not fetched or unavailable)
+}
+
+// Tag represents a music tag with popularity count.
+type Tag struct {
+	Name  string
+	Count int
 }
