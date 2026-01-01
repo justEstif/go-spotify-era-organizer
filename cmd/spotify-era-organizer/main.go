@@ -11,6 +11,7 @@ import (
 
 	"github.com/justestif/go-spotify-era-organizer/internal/auth"
 	"github.com/justestif/go-spotify-era-organizer/internal/clustering"
+	"github.com/justestif/go-spotify-era-organizer/internal/spotify"
 )
 
 // Config holds CLI configuration options.
@@ -72,7 +73,7 @@ func run(cfg Config) error {
 		return fmt.Errorf("creating authenticator: %w", err)
 	}
 
-	client, err := authenticator.Authenticate(ctx)
+	apiClient, err := authenticator.Authenticate(ctx)
 	if err != nil {
 		if errors.Is(err, auth.ErrAuthTimeout) {
 			return fmt.Errorf("authentication timed out - please try again")
@@ -80,18 +81,44 @@ func run(cfg Config) error {
 		return fmt.Errorf("authentication failed: %w", err)
 	}
 
-	user, err := client.CurrentUser(ctx)
+	// Wrap with our client for convenience methods
+	client := spotify.New(apiClient)
+
+	user, err := apiClient.CurrentUser(ctx)
 	if err != nil {
 		return fmt.Errorf("getting user info: %w", err)
 	}
 
 	fmt.Printf("Authenticated as: %s\n", user.DisplayName)
-	fmt.Println("Authentication successful!")
 
-	// Config is available for use:
-	// - cfg.toClusteringConfig() for clustering
-	// - cfg.DryRun for preview mode
-	_ = cfg.toClusteringConfig() // Will be used by CLI integration (bead dng)
+	// Fetch all liked songs
+	fmt.Println("\nFetching liked songs...")
+	tracks, err := client.FetchAllLikedSongs(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching liked songs: %w", err)
+	}
+
+	if len(tracks) == 0 {
+		fmt.Println("No liked songs found.")
+		return nil
+	}
+
+	// Detect eras using CLI config
+	fmt.Println("\nDetecting eras...")
+	clusterCfg := cfg.toClusteringConfig()
+	eras, outliers := clustering.DetectEras(tracks, clusterCfg)
+
+	// Display summary
+	fmt.Println()
+	fmt.Print(clustering.FormatEraSummary(eras, outliers))
+
+	if cfg.DryRun {
+		fmt.Println("\nDry-run mode: no playlists created.")
+		return nil
+	}
+
+	// TODO: Playlist creation will be wired up in CLI Integration task (dng)
+	fmt.Println("\nPlaylist creation not yet implemented.")
 
 	return nil
 }
