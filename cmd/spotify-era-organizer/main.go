@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/justestif/go-spotify-era-organizer/internal/auth"
@@ -19,6 +20,7 @@ type Config struct {
 	GapDays        int  // Gap threshold in days to split eras
 	MinClusterSize int  // Minimum tracks per era
 	DryRun         bool // Preview mode (no playlist creation)
+	Limit          int  // Maximum playlists to create (0 = unlimited)
 }
 
 // parseFlags parses CLI flags and returns configuration.
@@ -27,6 +29,7 @@ func parseFlags() Config {
 	flag.IntVar(&cfg.GapDays, "gap", 7, "gap threshold in days to split eras")
 	flag.IntVar(&cfg.MinClusterSize, "min-size", 3, "minimum tracks per era")
 	flag.BoolVar(&cfg.DryRun, "dry-run", false, "preview clusters without creating playlists")
+	flag.IntVar(&cfg.Limit, "limit", 5, "maximum playlists to create (0 = unlimited)")
 	flag.Parse()
 	return cfg
 }
@@ -38,6 +41,9 @@ func (c Config) validate() error {
 	}
 	if c.MinClusterSize < 1 {
 		return fmt.Errorf("min-size must be at least 1, got %d", c.MinClusterSize)
+	}
+	if c.Limit < 0 {
+		return fmt.Errorf("limit must be non-negative, got %d", c.Limit)
 	}
 	return nil
 }
@@ -116,6 +122,16 @@ func run(cfg Config) error {
 	fmt.Println("\nDetecting eras...")
 	clusterCfg := cfg.toClusteringConfig()
 	eras, outliers := clustering.DetectEras(tracks, clusterCfg)
+
+	// Reverse eras so most recent comes first
+	slices.Reverse(eras)
+
+	// Apply limit if set
+	totalEras := len(eras)
+	if cfg.Limit > 0 && len(eras) > cfg.Limit {
+		eras = eras[:cfg.Limit]
+		fmt.Printf("Showing %d of %d eras (use --limit=0 for all)\n", cfg.Limit, totalEras)
+	}
 
 	// Display summary
 	fmt.Println()
