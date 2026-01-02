@@ -14,6 +14,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	spotifyauth "github.com/zmb3/spotify/v2/auth"
+
+	"github.com/justestif/go-spotify-era-organizer/internal/db"
+	"github.com/justestif/go-spotify-era-organizer/internal/eras"
+	syncpkg "github.com/justestif/go-spotify-era-organizer/internal/sync"
 )
 
 const (
@@ -31,15 +35,19 @@ type ServerConfig struct {
 	ClientSecret string
 	TemplatesFS  fs.FS
 	StaticFS     fs.FS
+	DB           *db.DB // Optional - if nil, uses in-memory sessions
 }
 
 // Server is the HTTP server for the web application.
 type Server struct {
-	router    chi.Router
-	server    *http.Server
-	templates *Templates
-	sessions  *SessionStore
-	handlers  *Handlers
+	router      chi.Router
+	server      *http.Server
+	templates   *Templates
+	sessions    SessionManager
+	handlers    *Handlers
+	db          *db.DB
+	syncService *syncpkg.Service
+	eraService  *eras.Service
 }
 
 // NewServer creates a new web server.
@@ -62,20 +70,43 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		return nil, fmt.Errorf("loading templates: %w", err)
 	}
 
-	// Create session store
-	sessions := NewSessionStore()
+	// Create session store (DB-backed or in-memory)
+	var sessions SessionManager
+	if cfg.DB != nil {
+		sessions = NewDBSessionStore(cfg.DB)
+	} else {
+		sessions = NewSessionStore()
+	}
+
+	// Create services (only if DB is available)
+	var syncService *syncpkg.Service
+	var eraService *eras.Service
+	if cfg.DB != nil {
+		syncService = syncpkg.New(cfg.DB)
+		eraService = eras.New(cfg.DB)
+	}
 
 	// Create handlers
-	handlers := NewHandlers(auth, sessions, templates)
+	handlers := NewHandlers(HandlerDeps{
+		Auth:        auth,
+		Sessions:    sessions,
+		Templates:   templates,
+		DB:          cfg.DB,
+		SyncService: syncService,
+		EraService:  eraService,
+	})
 
 	// Create router
 	router := chi.NewRouter()
 
 	s := &Server{
-		router:    router,
-		templates: templates,
-		sessions:  sessions,
-		handlers:  handlers,
+		router:      router,
+		templates:   templates,
+		sessions:    sessions,
+		handlers:    handlers,
+		db:          cfg.DB,
+		syncService: syncService,
+		eraService:  eraService,
 	}
 
 	// Configure middleware

@@ -2,10 +2,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 
+	"github.com/justestif/go-spotify-era-organizer/internal/db"
 	"github.com/justestif/go-spotify-era-organizer/internal/web"
 	webfs "github.com/justestif/go-spotify-era-organizer/web"
 )
@@ -26,6 +29,22 @@ func run() error {
 		return fmt.Errorf("please set SPOTIFY_ID and SPOTIFY_SECRET environment variables")
 	}
 
+	// Connect to database (optional - gracefully degrade if not available)
+	var database *db.DB
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL != "" {
+		var err error
+		database, err = db.New(context.Background(), databaseURL)
+		if err != nil {
+			return fmt.Errorf("connecting to database: %w", err)
+		}
+		defer database.Close()
+		log.Println("Connected to PostgreSQL database")
+	} else {
+		log.Println("Warning: DATABASE_URL not set, using in-memory session storage")
+		log.Println("Data will not persist across restarts")
+	}
+
 	// Create sub-filesystems for templates and static files
 	templates, err := fs.Sub(webfs.TemplatesFS, "templates")
 	if err != nil {
@@ -44,6 +63,7 @@ func run() error {
 		ClientSecret: clientSecret,
 		TemplatesFS:  templates,
 		StaticFS:     static,
+		DB:           database,
 	})
 	if err != nil {
 		return fmt.Errorf("creating server: %w", err)
