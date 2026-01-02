@@ -121,7 +121,6 @@ func DetectMoodEras(tracks []Track, cfg TagClusterConfig) ([]MoodEra, []Track) {
 	result, err := km.Partition(obs, cfg.NumClusters)
 	if err != nil {
 		// On error, treat all as outliers
-		fmt.Printf("Warning: k-means clustering failed: %v\n", err)
 		var outliers []Track
 		for _, t := range validTracks {
 			outliers = append(outliers, *t)

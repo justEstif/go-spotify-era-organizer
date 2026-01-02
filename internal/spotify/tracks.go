@@ -14,7 +14,6 @@ import (
 
 // FetchAllLikedSongs retrieves all tracks from the user's library.
 // Returns tracks as clustering.Track with artists joined by ", ".
-// Progress is logged to stdout during fetch.
 func (c *Client) FetchAllLikedSongs(ctx context.Context) ([]clustering.Track, error) {
 	var tracks []clustering.Track
 
@@ -30,8 +29,6 @@ func (c *Client) FetchAllLikedSongs(ctx context.Context) ([]clustering.Track, er
 			tracks = append(tracks, track)
 		}
 
-		fmt.Printf("Fetched %d tracks...\n", len(tracks))
-
 		err = c.api.NextPage(ctx, page)
 		if errors.Is(err, spotify.ErrNoMorePages) {
 			break
@@ -41,7 +38,6 @@ func (c *Client) FetchAllLikedSongs(ctx context.Context) ([]clustering.Track, er
 		}
 	}
 
-	fmt.Printf("Fetched %d tracks total.\n", len(tracks))
 	return tracks, nil
 }
 

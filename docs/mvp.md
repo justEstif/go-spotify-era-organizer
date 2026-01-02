@@ -6,19 +6,15 @@ Spotify's liked songs grow into an unmanageable scroll of hundreds or thousands 
 
 ## Solution
 
-A CLI tool that analyzes your Spotify liked songs, groups them by mood using audio features, and automatically generates playlists for each "era." Playlists are named with descriptive mood labels and date ranges (e.g., `Upbeat Party: Jan 15 - Feb 3, 2024`) so you can instantly recall the vibe and time period. Tracks that don't fit cleanly into any cluster are skipped rather than forced into awkward groupings.
+A web application that analyzes your Spotify liked songs, groups them by mood using genre tags, and automatically generates playlists for each "era." Playlists are named with descriptive mood labels and date ranges (e.g., `rock & indie & pop: Jan 15 - Feb 3, 2024`) so you can instantly recall the vibe and time period. Tracks that don't fit cleanly into any cluster are skipped rather than forced into awkward groupings.
 
 ## Technical Approach
 
-- **CLI built in Go** using Go's standard library
-- **Spotify Web API** via `zmb3/spotify/v2` library with `golang.org/x/oauth2` for auth flow, fetching liked songs (`/me/tracks`), audio features (`/audio-features`), and creating playlists
-- **K-means clustering algorithm** using `muesli/kmeans` library to group tracks by audio features:
-  - Energy (intensity and activity)
-  - Valence (musical positivity)
-  - Danceability (how suitable for dancing)
-  - Acousticness (acoustic vs electronic)
-- **Mood-based era naming** using a quadrant system based on energy/valence with acousticness modifier
-- **Outlier handling**: clusters below a minimum size (e.g., 3 songs) are skipped; tracks without audio features are treated as outliers
-- **Local token caching** via JSON file for OAuth refresh tokens so users don't re-auth every run
-- **Dry-run mode** to preview clusters before creating playlists
+- **Web application built in Go** using Go's standard library and HTMX for interactivity
+- **Spotify Web API** via `zmb3/spotify/v2` library with `golang.org/x/oauth2` for auth flow, fetching liked songs (`/me/tracks`) and creating playlists
+- **Last.fm API** for fetching genre tags for each track
+- **K-means clustering algorithm** using `muesli/kmeans` library to group tracks by tag similarity
+- **Tag-based era naming** using top 3 most prominent tags from each cluster
+- **Outlier handling**: clusters below a minimum size (e.g., 3 songs) are skipped; tracks without tags are treated as outliers
+- **Session-based authentication** for OAuth tokens
 - **Single binary distribution** - compile once, run anywhere without runtime dependencies

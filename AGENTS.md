@@ -1,12 +1,12 @@
 # AGENTS.md - Go Spotify Era Organizer
 
-Guidance for AI coding agents working on this Go CLI project.
+Guidance for AI coding agents working on this Go web application.
 
 ## Project Overview
 
-CLI tool that analyzes Spotify liked songs, detects listening "eras" via temporal clustering, and generates playlists.
+Web application that analyzes Spotify liked songs, detects listening "eras" via tag-based clustering, and generates playlists.
 
-**Stack:** Go 1.25.5+, `zmb3/spotify/v2`, `golang.org/x/oauth2`, single binary distribution.
+**Stack:** Go 1.25.5+, `zmb3/spotify/v2`, `golang.org/x/oauth2`, HTMX, single binary distribution.
 
 ## Build, Test, Lint Commands
 
@@ -48,11 +48,13 @@ go mod tidy                                 # Clean up go.mod/go.sum
 ## Project Structure
 
 ```
-cmd/spotify-era-organizer/main.go    # Entrypoint
-internal/auth/                        # OAuth2 authentication
-internal/spotify/                     # API client wrapper
-internal/clustering/                  # Era detection algorithm
-internal/playlist/                    # Playlist creation
+cmd/spotify-era-organizer/main.go    # Entrypoint (web server)
+internal/web/                         # HTTP handlers, server, sessions, templates
+internal/spotify/                     # Spotify API client wrapper
+internal/clustering/                  # Era detection algorithm (k-means on tags)
+internal/lastfm/                      # Last.fm API client for genre tags
+internal/tags/                        # Tag enrichment service
+web/                                  # Static files, templates, embedded assets
 docs/                                 # Documentation
 ```
 
@@ -75,7 +77,7 @@ import (
 
 | Element    | Style                          | Example                       |
 | ---------- | ------------------------------ | ----------------------------- |
-| Packages   | lowercase, single-word         | `clustering`, `auth`          |
+| Packages   | lowercase, single-word         | `clustering`, `web`           |
 | Files      | lowercase, underscores         | `token_cache.go`              |
 | Exported   | PascalCase                     | `DetectEras`, `ClusterConfig` |
 | Unexported | camelCase                      | `calculateGap`, `tokenStore`  |
@@ -132,11 +134,11 @@ func TestDetectEras(t *testing.T) {
 ### Documentation
 
 ```go
-// Package clustering implements era detection using gap-based clustering.
+// Package clustering implements era detection using tag-based clustering.
 package clustering
 
-// DetectEras groups tracks into temporal eras based on add dates.
-func DetectEras(tracks []Track, gapDays int) ([]Era, error)
+// DetectMoodEras groups tracks into eras based on tag similarity.
+func DetectMoodEras(tracks []Track, cfg TagClusterConfig) ([]MoodEra, []Track)
 ```
 
 ## Task Tracking (Beads)
@@ -152,15 +154,15 @@ bd sync --from-main        # Sync beads data
 
 ## Domain Patterns
 
-**OAuth:** Cache tokens in `~/.config/spotify-era-organizer/token.json`
+**OAuth:** Session-based token storage (web application)
 
 **Rate Limiting:** Implement exponential backoff, batch operations
 
 **Clustering:**
 
-- Gap threshold: 7-14 days (configurable)
+- Default clusters: 3 (configurable)
 - Minimum cluster size: 3 songs
-- Sort tracks by `added_at` before processing
+- Tracks without tags become outliers
 
 ## Frontend Development
 

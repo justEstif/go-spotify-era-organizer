@@ -27,7 +27,6 @@ func (c *Client) CreatePlaylist(ctx context.Context, name, description string, p
 
 // AddTracksToPlaylist adds tracks to a playlist, handling batching for large sets.
 // Spotify allows max 100 tracks per request.
-// Progress is logged to stdout during add.
 func (c *Client) AddTracksToPlaylist(ctx context.Context, playlistID string, trackIDs []string) error {
 	if len(trackIDs) == 0 {
 		return nil
@@ -39,14 +38,10 @@ func (c *Client) AddTracksToPlaylist(ctx context.Context, playlistID string, tra
 		ids[i] = spotify.ID(id)
 	}
 
-	total := len(ids)
-
 	// Batch in chunks of 100
 	for i := 0; i < len(ids); i += maxTracksPerRequest {
 		end := min(i+maxTracksPerRequest, len(ids))
 		batch := ids[i:end]
-
-		fmt.Printf("Adding tracks %d-%d of %d...\n", i+1, end, total)
 
 		_, err := c.api.AddTracksToPlaylist(ctx, spotify.ID(playlistID), batch...)
 		if err != nil {
@@ -54,6 +49,5 @@ func (c *Client) AddTracksToPlaylist(ctx context.Context, playlistID string, tra
 		}
 	}
 
-	fmt.Printf("Added %d tracks to playlist.\n", total)
 	return nil
 }
