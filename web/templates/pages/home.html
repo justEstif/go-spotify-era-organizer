@@ -17,14 +17,16 @@
                 <span class="user-info__name">{{.User.Name}}</span>
                 <span class="user-info__status">Connected</span>
             </div>
-            <p class="text-secondary text-sm" style="margin-top: var(--space-lg);">
-                Era detection coming soon...
-            </p>
-            <form action="/auth/logout" method="POST" style="margin-top: var(--space-md);">
-                <button type="submit" class="btn btn-secondary">
-                    Disconnect
-                </button>
-            </form>
+            <div style="margin-top: var(--space-lg); display: flex; gap: var(--space-md); flex-wrap: wrap;">
+                <a href="/eras" class="btn btn-primary">
+                    View Your Eras
+                </a>
+                <form action="/auth/logout" method="POST" style="margin: 0;">
+                    <button type="submit" class="btn btn-secondary">
+                        Disconnect
+                    </button>
+                </form>
+            </div>
         </div>
     {{else}}
         {{/* Unauthenticated state */}}

@@ -1,0 +1,17 @@
+{{define "era-tracks"}}
+<div class="track-list">
+    {{if .}}
+    {{range $i, $track := .}}
+    <div class="track-item">
+        <span class="track-item__number">{{add $i 1}}</span>
+        <div class="track-item__info">
+            <div class="track-item__name" title="{{$track.Name}}">{{$track.Name}}</div>
+            <div class="track-item__artist" title="{{$track.Artist}}">{{$track.Artist}}</div>
+        </div>
+    </div>
+    {{end}}
+    {{else}}
+    <div class="track-list__empty">No tracks found</div>
+    {{end}}
+</div>
+{{end}}

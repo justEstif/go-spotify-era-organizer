@@ -17,7 +17,9 @@ import (
 
 	"github.com/justestif/go-spotify-era-organizer/internal/db"
 	"github.com/justestif/go-spotify-era-organizer/internal/eras"
+	"github.com/justestif/go-spotify-era-organizer/internal/lastfm"
 	syncpkg "github.com/justestif/go-spotify-era-organizer/internal/sync"
+	"github.com/justestif/go-spotify-era-organizer/internal/tags"
 )
 
 const (
@@ -36,6 +38,7 @@ type ServerConfig struct {
 	TemplatesFS  fs.FS
 	StaticFS     fs.FS
 	DB           *db.DB // Optional - if nil, uses in-memory sessions
+	LastFMAPIKey string // Optional - if empty, tag fetching is disabled
 }
 
 // Server is the HTTP server for the web application.
@@ -48,6 +51,7 @@ type Server struct {
 	db          *db.DB
 	syncService *syncpkg.Service
 	eraService  *eras.Service
+	tagService  *tags.Service
 }
 
 // NewServer creates a new web server.
@@ -81,9 +85,16 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	// Create services (only if DB is available)
 	var syncService *syncpkg.Service
 	var eraService *eras.Service
+	var tagService *tags.Service
 	if cfg.DB != nil {
 		syncService = syncpkg.New(cfg.DB)
 		eraService = eras.New(cfg.DB)
+
+		// Create tag service if Last.fm API key is available
+		if cfg.LastFMAPIKey != "" {
+			lastfmClient := lastfm.NewClient(&lastfm.Config{APIKey: cfg.LastFMAPIKey})
+			tagService = tags.NewService(lastfmClient)
+		}
 	}
 
 	// Create handlers
@@ -94,6 +105,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		DB:          cfg.DB,
 		SyncService: syncService,
 		EraService:  eraService,
+		TagService:  tagService,
 	})
 
 	// Create router
@@ -107,6 +119,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		db:          cfg.DB,
 		syncService: syncService,
 		eraService:  eraService,
+		tagService:  tagService,
 	}
 
 	// Configure middleware
@@ -144,11 +157,18 @@ func (s *Server) setupRoutes(staticFS fs.FS) {
 
 	// Pages
 	s.router.Get("/", s.handlers.Home)
+	s.router.Get("/eras", s.handlers.Eras)
+	s.router.Get("/eras/{id}/tracks", s.handlers.EraTracks)
 
 	// Auth routes
 	s.router.Get("/auth/login", s.handlers.Login)
 	s.router.Get("/callback", s.handlers.Callback)
 	s.router.Post("/auth/logout", s.handlers.Logout)
+
+	// API routes
+	s.router.Post("/api/analyze", s.handlers.Analyze)
+	s.router.Get("/api/eras", s.handlers.GetEras)
+	s.router.Get("/api/eras/{id}/tracks", s.handlers.GetEraTracksAPI)
 }
 
 // Start starts the HTTP server.
