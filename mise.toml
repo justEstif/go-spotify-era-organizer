@@ -3,9 +3,10 @@
 "go:honnef.co/go/tools/cmd/staticcheck" = "latest"
 "go:github.com/golang-migrate/migrate/v4/cmd/migrate" = "latest"
 
-# set value in mise.local.toml and add to gitignore
+# set values in mise.local.toml (gitignored)
 [env]
 SPOTIFY_ID = ""
 SPOTIFY_SECRET = ""
 LASTFM_API_KEY = ""
 LASTFM_SECRET = ""
+DATABASE_URL = "postgres://spotify:spotify@localhost:5432/spotify_era?sslmode=disable"

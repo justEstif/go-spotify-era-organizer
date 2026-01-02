@@ -10,11 +10,36 @@ Spotify's liked songs grow into an unmanageable list with no context. You natura
 
 This tool uses Last.fm genre tags to cluster your liked songs by mood using k-means clustering. It then creates private playlists with descriptive names like "rock & indie & alternative: Jan 15 - Feb 3, 2024".
 
-## Installation
+## Development Setup
+
+### Prerequisites
+
+- Go 1.25.5+
+- Podman with compose
+- [mise](https://mise.jdx.dev/) for tool/env management
+
+### Database
 
 ```bash
-git clone https://github.com/justestif/go-spotify-era-organizer.git
-cd go-spotify-era-organizer
+# Start Postgres
+podman compose up -d
+
+# Install tools (including migrate CLI)
+mise install
+
+# Run migrations
+migrate -path migrations -database "$DATABASE_URL" up
+
+# Stop database
+podman compose down
+
+# Reset database (destroy all data)
+podman compose down -v
+```
+
+### Build
+
+```bash
 go build -o spotify-era-organizer ./cmd/spotify-era-organizer
 ```
 
