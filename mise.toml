@@ -1,6 +1,7 @@
 [tools]
 "npm:beads-ui" = "latest"
 "go:honnef.co/go/tools/cmd/staticcheck" = "latest"
+"go:github.com/golang-migrate/migrate/v4/cmd/migrate" = "latest"
 
 # set value in mise.local.toml and add to gitignore
 [env]
