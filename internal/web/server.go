@@ -169,6 +169,8 @@ func (s *Server) setupRoutes(staticFS fs.FS) {
 	s.router.Post("/api/analyze", s.handlers.Analyze)
 	s.router.Get("/api/eras", s.handlers.GetEras)
 	s.router.Get("/api/eras/{id}/tracks", s.handlers.GetEraTracksAPI)
+	s.router.Post("/api/sync", s.handlers.SyncLibrary)
+	s.router.Get("/api/sync/status", s.handlers.GetSyncStatus)
 }
 
 // Start starts the HTTP server.

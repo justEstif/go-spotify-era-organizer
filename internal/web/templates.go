@@ -149,6 +149,106 @@ func defaultFuncs() template.FuncMap {
 		"add": func(a, b int) int {
 			return a + b
 		},
+
+		// timeAgo returns a human-readable relative time string
+		// Accepts both time.Time and *time.Time
+		"timeAgo": func(t any) string {
+			var tm time.Time
+			switch v := t.(type) {
+			case time.Time:
+				tm = v
+			case *time.Time:
+				if v == nil {
+					return "never"
+				}
+				tm = *v
+			default:
+				return "never"
+			}
+			if tm.IsZero() {
+				return "never"
+			}
+			d := time.Since(tm)
+			switch {
+			case d < time.Minute:
+				return "just now"
+			case d < time.Hour:
+				mins := int(d.Minutes())
+				if mins == 1 {
+					return "1 minute ago"
+				}
+				return fmt.Sprintf("%d minutes ago", mins)
+			case d < 24*time.Hour:
+				hours := int(d.Hours())
+				if hours == 1 {
+					return "1 hour ago"
+				}
+				return fmt.Sprintf("%d hours ago", hours)
+			case d < 7*24*time.Hour:
+				days := int(d.Hours() / 24)
+				if days == 1 {
+					return "1 day ago"
+				}
+				return fmt.Sprintf("%d days ago", days)
+			default:
+				return tm.Format("Jan 2, 2006")
+			}
+		},
+
+		// timeUntil returns a human-readable duration until a future time
+		// Accepts both time.Time and *time.Time
+		"timeUntil": func(t any) string {
+			var tm time.Time
+			switch v := t.(type) {
+			case time.Time:
+				tm = v
+			case *time.Time:
+				if v == nil {
+					return ""
+				}
+				tm = *v
+			default:
+				return ""
+			}
+			if tm.IsZero() {
+				return ""
+			}
+			d := time.Until(tm)
+			if d <= 0 {
+				return "now"
+			}
+			switch {
+			case d < time.Minute:
+				return "less than a minute"
+			case d < time.Hour:
+				mins := int(d.Minutes())
+				if mins == 1 {
+					return "1 minute"
+				}
+				return fmt.Sprintf("%d minutes", mins)
+			default:
+				hours := int(d.Hours())
+				mins := int(d.Minutes()) % 60
+				if hours == 0 {
+					return fmt.Sprintf("%d minutes", mins)
+				}
+				if mins == 0 {
+					if hours == 1 {
+						return "1 hour"
+					}
+					return fmt.Sprintf("%d hours", hours)
+				}
+				return fmt.Sprintf("%dh %dm", hours, mins)
+			}
+		},
+
+		// formatDatePtr formats a *time.Time as "Jan 2, 2006"
+		"formatDatePtr": func(t *time.Time) string {
+			if t == nil {
+				return ""
+			}
+			return t.Format("Jan 2, 2006")
+		},
 	}
 }
 
@@ -178,10 +278,18 @@ type HomePageData struct {
 	Authenticated bool
 }
 
+// SyncStatusData contains sync status information for templates.
+type SyncStatusData struct {
+	LastSync          *time.Time
+	CanSync           bool
+	NextSyncAvailable *time.Time
+}
+
 // ErasPageData contains data for the eras page template.
 type ErasPageData struct {
 	PageData
-	Eras []EraData
+	Eras       []EraData
+	SyncStatus *SyncStatusData
 }
 
 // EraData contains data for a single era in templates.

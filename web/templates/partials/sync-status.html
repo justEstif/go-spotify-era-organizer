@@ -1,0 +1,35 @@
+{{define "sync-status"}}
+<div class="sync-status" id="sync-status">
+    {{if .LastSync}}
+    <span class="sync-status__time" title="{{formatDatePtr .LastSync}}">
+        Last synced: {{timeAgo .LastSync}}
+    </span>
+    {{else}}
+    <span class="sync-status__time">Never synced</span>
+    {{end}}
+    
+    {{if .CanSync}}
+    <button 
+        class="btn btn-secondary btn-sm sync-btn"
+        hx-post="/api/sync"
+        hx-indicator="#sync-loading"
+        hx-swap="none"
+        hx-on::after-request="if(event.detail.successful) window.location.reload()"
+    >
+        <span class="sync-btn__text">Refresh Data</span>
+        <span id="sync-loading" class="htmx-indicator">
+            <span class="spinner spinner--sm"></span>
+        </span>
+    </button>
+    {{else}}
+    <button 
+        class="btn btn-secondary btn-sm sync-btn sync-btn--disabled"
+        disabled
+        title="Available in {{timeUntil .NextSyncAvailable}}"
+    >
+        <span class="sync-btn__text">Refresh Data</span>
+        <span class="sync-btn__cooldown">({{timeUntil .NextSyncAvailable}})</span>
+    </button>
+    {{end}}
+</div>
+{{end}}

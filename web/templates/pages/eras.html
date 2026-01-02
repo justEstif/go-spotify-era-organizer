@@ -14,6 +14,9 @@
             </p>
         </div>
         <div class="eras-header__actions">
+            {{if .SyncStatus}}
+            {{template "sync-status" .SyncStatus}}
+            {{end}}
             <a href="/" class="btn btn-secondary">Back</a>
         </div>
     </header>
@@ -127,6 +130,49 @@
     margin-bottom: var(--space-2xl);
     gap: var(--space-lg);
     flex-wrap: wrap;
+}
+
+.eras-header__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    flex-wrap: wrap;
+}
+
+/* Sync status component */
+.sync-status {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.sync-status__time {
+    font-family: var(--font-body);
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+    white-space: nowrap;
+}
+
+.sync-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+.sync-btn--disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.sync-btn__cooldown {
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+}
+
+.spinner--sm {
+    width: 0.875rem;
+    height: 0.875rem;
+    border-width: 1.5px;
 }
 
 .eras-header__title {

@@ -306,6 +306,26 @@ func (h *Handlers) Eras(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Get sync status for the header
+	var syncStatus *SyncStatusData
+	if h.syncService != nil {
+		lastSync, err := h.syncService.GetLastSyncTime(ctx, session.UserID)
+		if err != nil {
+			log.Printf("Error getting last sync time: %v", err)
+		}
+		canSync, nextTime, err := h.syncService.CanSync(ctx, session.UserID)
+		if err != nil {
+			log.Printf("Error checking sync status: %v", err)
+		}
+		syncStatus = &SyncStatusData{
+			LastSync: lastSync,
+			CanSync:  canSync,
+		}
+		if !nextTime.IsZero() {
+			syncStatus.NextSyncAvailable = &nextTime
+		}
+	}
+
 	data := ErasPageData{
 		PageData: PageData{
 			Title:       "Your Eras - Spotify Era Organizer",
@@ -315,7 +335,8 @@ func (h *Handlers) Eras(w http.ResponseWriter, r *http.Request) {
 				Name: session.UserName,
 			},
 		},
-		Eras: erasData,
+		Eras:       erasData,
+		SyncStatus: syncStatus,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -704,4 +725,165 @@ func (h *Handlers) jsonResponse(w http.ResponseWriter, data any, status int) {
 // jsonError writes a JSON error response.
 func (h *Handlers) jsonError(w http.ResponseWriter, message string, status int) {
 	h.jsonResponse(w, ErrorResponse{Error: message}, status)
+}
+
+// SyncResponse is the JSON response for POST /api/sync.
+type SyncResponse struct {
+	TracksSynced int       `json:"tracks_synced"`
+	NewTracks    int       `json:"new_tracks,omitempty"`
+	ErasDetected int       `json:"eras_detected"`
+	SyncedAt     time.Time `json:"synced_at"`
+	Message      string    `json:"message"`
+}
+
+// SyncErrorResponse is the JSON error response for sync cooldown.
+type SyncErrorResponse struct {
+	Error             string     `json:"error"`
+	NextSyncAvailable *time.Time `json:"next_sync_available,omitempty"`
+}
+
+// SyncStatusResponse is the JSON response for GET /api/sync/status.
+type SyncStatusResponse struct {
+	LastSync          *time.Time `json:"last_sync,omitempty"`
+	CanSync           bool       `json:"can_sync"`
+	NextSyncAvailable *time.Time `json:"next_sync_available,omitempty"`
+}
+
+// GetSyncStatus returns the sync status for the authenticated user (GET /api/sync/status).
+func (h *Handlers) GetSyncStatus(w http.ResponseWriter, r *http.Request) {
+	session := h.sessions.GetFromRequest(r)
+	if session == nil {
+		h.jsonError(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	ctx := r.Context()
+
+	if h.syncService == nil {
+		h.jsonError(w, "Sync service not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Get last sync time
+	lastSync, err := h.syncService.GetLastSyncTime(ctx, session.UserID)
+	if err != nil {
+		h.jsonError(w, fmt.Sprintf("Failed to get sync status: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Check if sync is allowed
+	canSync, nextTime, err := h.syncService.CanSync(ctx, session.UserID)
+	if err != nil {
+		h.jsonError(w, fmt.Sprintf("Failed to check sync status: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	resp := SyncStatusResponse{
+		LastSync: lastSync,
+		CanSync:  canSync,
+	}
+	if !nextTime.IsZero() {
+		resp.NextSyncAvailable = &nextTime
+	}
+
+	h.jsonResponse(w, resp, http.StatusOK)
+}
+
+// SyncLibrary syncs liked songs from Spotify and re-detects eras (POST /api/sync).
+func (h *Handlers) SyncLibrary(w http.ResponseWriter, r *http.Request) {
+	session := h.sessions.GetFromRequest(r)
+	if session == nil {
+		h.jsonError(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	ctx := r.Context()
+	userID := session.UserID
+
+	// Verify required services are available
+	if h.db == nil {
+		h.jsonError(w, "Database not configured", http.StatusServiceUnavailable)
+		return
+	}
+	if h.syncService == nil {
+		h.jsonError(w, "Sync service not configured", http.StatusServiceUnavailable)
+		return
+	}
+	if h.eraService == nil {
+		h.jsonError(w, "Era service not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Check if sync is allowed (respect cooldown)
+	canSync, nextTime, err := h.syncService.CanSync(ctx, userID)
+	if err != nil {
+		h.jsonError(w, fmt.Sprintf("Failed to check sync status: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if !canSync {
+		resp := SyncErrorResponse{
+			Error:             "Sync not available yet",
+			NextSyncAvailable: &nextTime,
+		}
+		h.jsonResponse(w, resp, http.StatusLocked)
+		return
+	}
+
+	// Get session token for Spotify API calls
+	token := session.Token
+
+	// Create Spotify client
+	httpClient := h.auth.Client(ctx, token)
+	spotifyAPI := spotify.New(httpClient)
+	client := spotifyclient.New(spotifyAPI)
+
+	log.Printf("Starting sync for user %s", userID)
+
+	// Count tracks before sync to calculate new tracks
+	tracksBefore, _ := h.db.Tracks().GetUserTracks(ctx, userID)
+	tracksBeforeCount := len(tracksBefore)
+
+	// Sync liked songs from Spotify
+	syncResult, err := h.syncService.SyncLikedSongs(ctx, client, userID, false)
+	if err != nil {
+		h.jsonError(w, fmt.Sprintf("Sync failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Synced %d tracks for user %s", syncResult.TracksCount, userID)
+
+	// Calculate new tracks added
+	newTracks := syncResult.TracksCount - tracksBeforeCount
+	if newTracks < 0 {
+		newTracks = 0
+	}
+
+	// Fetch tags for new songs only (existing caching handles this)
+	if h.tagService != nil {
+		if err := h.fetchMissingTags(ctx, userID); err != nil {
+			log.Printf("Warning: tag fetching failed for user %s: %v", userID, err)
+			// Continue anyway - we can still detect eras with existing tags
+		}
+	}
+
+	// Re-detect and persist eras
+	cfg := clustering.DefaultTagClusterConfig()
+	eraResult, err := h.eraService.DetectAndPersist(ctx, userID, cfg)
+	if err != nil {
+		h.jsonError(w, fmt.Sprintf("Era detection failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Detected %d eras for user %s after sync", len(eraResult.Eras), userID)
+
+	// Build response
+	resp := SyncResponse{
+		TracksSynced: syncResult.TracksCount,
+		NewTracks:    newTracks,
+		ErasDetected: len(eraResult.Eras),
+		SyncedAt:     syncResult.SyncedAt,
+		Message:      fmt.Sprintf("Synced %d tracks, detected %d eras", syncResult.TracksCount, len(eraResult.Eras)),
+	}
+
+	h.jsonResponse(w, resp, http.StatusOK)
 }
