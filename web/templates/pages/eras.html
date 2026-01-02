@@ -33,7 +33,7 @@
                 {{if .TopTags}}
                 <div class="era-card__tags">
                     {{range .TopTags}}
-                    <span class="tag">{{.}}</span>
+                    <a href="https://www.last.fm/tag/{{.}}" target="_blank" rel="noopener noreferrer" class="tag tag--link">{{.}}</a>
                     {{end}}
                 </div>
                 {{end}}
@@ -228,6 +228,16 @@
     padding: var(--space-xs) var(--space-sm);
     border-radius: var(--radius-full);
     border: 1px solid var(--border-subtle);
+}
+
+.tag--link {
+    text-decoration: none;
+    transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.tag--link:hover {
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
 }
 
 .era-card__track-count {
