@@ -29,6 +29,12 @@ func run() error {
 		return fmt.Errorf("please set SPOTIFY_ID and SPOTIFY_SECRET environment variables")
 	}
 
+	// Read optional Last.fm API key
+	lastfmAPIKey := os.Getenv("LASTFM_API_KEY")
+	if lastfmAPIKey == "" {
+		log.Println("Warning: LASTFM_API_KEY not set, tag fetching will be disabled")
+	}
+
 	// Connect to database (optional - gracefully degrade if not available)
 	var database *db.DB
 	databaseURL := os.Getenv("DATABASE_URL")
@@ -64,6 +70,7 @@ func run() error {
 		TemplatesFS:  templates,
 		StaticFS:     static,
 		DB:           database,
+		LastFMAPIKey: lastfmAPIKey,
 	})
 	if err != nil {
 		return fmt.Errorf("creating server: %w", err)
