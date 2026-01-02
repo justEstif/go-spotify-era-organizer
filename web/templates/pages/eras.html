@@ -92,7 +92,21 @@
             We haven't analyzed your library yet. Your listening eras will appear here
             once we sync your liked songs and detect patterns.
         </p>
-        <a href="/" class="btn btn-primary">Go Home</a>
+        <div class="empty-state__actions">
+            <button 
+                class="btn btn-primary"
+                hx-post="/api/analyze"
+                hx-indicator="#analyze-loading"
+                hx-swap="none"
+                hx-on::after-request="if(event.detail.successful) window.location.reload()"
+            >
+                <span class="btn-text">Analyze My Library</span>
+                <span id="analyze-loading" class="htmx-indicator">
+                    <span class="spinner"></span>
+                </span>
+            </button>
+            <a href="/" class="btn btn-secondary">Go Home</a>
+        </div>
     </div>
     {{end}}
 </section>
@@ -316,6 +330,25 @@
     color: var(--text-secondary);
     max-width: 400px;
     margin: 0 auto var(--space-xl);
+}
+
+.empty-state__actions {
+    display: flex;
+    gap: var(--space-md);
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.btn-text {
+    display: inline;
+}
+
+.htmx-request .btn-text {
+    opacity: 0.7;
+}
+
+.btn .htmx-indicator {
+    margin-left: var(--space-sm);
 }
 
 /* Button variants */
