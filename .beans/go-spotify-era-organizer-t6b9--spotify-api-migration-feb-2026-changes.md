@@ -5,7 +5,7 @@ status: completed
 type: epic
 priority: critical
 created_at: 2026-03-09T17:49:30Z
-updated_at: 2026-03-09T18:03:49Z
+updated_at: 2026-03-09T18:04:53Z
 ---
 
 Migrate to the updated Spotify Web API following the February 2026 changes. Key impacts:
@@ -42,3 +42,5 @@ Migrate to the updated Spotify Web API following the February 2026 changes. Key 
 - Updated all 3 call sites in `internal/web/handlers.go` to pass `httpClient` to `spotifyclient.New()`
 - Added comprehensive tests in `internal/spotify/playlist_test.go` using httptest
 - All checks pass: `go build`, `go vet`, `go test`
+
+## Summary of Changes\nAll 4 child tasks completed: playlist endpoint migration, field audit, library compat check, docs update.
