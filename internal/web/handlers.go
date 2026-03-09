@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/justestif/go-spotify-era-organizer/internal/analysis"
+	"github.com/justestif/go-spotify-era-organizer/internal/clustering"
 	"github.com/justestif/go-spotify-era-organizer/internal/db"
 	"github.com/justestif/go-spotify-era-organizer/internal/eras"
 	spotifyclient "github.com/justestif/go-spotify-era-organizer/internal/spotify"
@@ -554,6 +556,122 @@ func (h *Handlers) GetEraTracksAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.jsonResponse(w, result, http.StatusOK)
+}
+
+// ReclusterResponse is the JSON response for POST /api/recluster.
+type ReclusterResponse struct {
+	EraCount int    `json:"era_count"`
+	Message  string `json:"message"`
+}
+
+// Recluster re-runs era detection with user-specified clustering parameters.
+func (h *Handlers) Recluster(w http.ResponseWriter, r *http.Request) {
+	session := h.sessions.GetFromRequest(r)
+	if session == nil {
+		h.jsonError(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if h.eraService == nil {
+		h.jsonError(w, "Era service not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Parse form values
+	if err := r.ParseForm(); err != nil {
+		h.jsonError(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	numClusters := 3
+	minClusterSize := 3
+
+	if v := r.FormValue("num_clusters"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 2 || n > 10 {
+			h.jsonError(w, "num_clusters must be an integer between 2 and 10", http.StatusBadRequest)
+			return
+		}
+		numClusters = n
+	}
+
+	if v := r.FormValue("min_cluster_size"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 10 {
+			h.jsonError(w, "min_cluster_size must be an integer between 1 and 10", http.StatusBadRequest)
+			return
+		}
+		minClusterSize = n
+	}
+
+	cfg := clustering.TagClusterConfig{
+		NumClusters:    numClusters,
+		MinClusterSize: minClusterSize,
+		MaxTags:        50,
+	}
+
+	ctx := r.Context()
+	result, err := h.eraService.DetectAndPersist(ctx, session.UserID, cfg)
+	if err != nil {
+		log.Printf("Re-clustering failed for user %s: %v", session.UserID, err)
+		h.jsonError(w, fmt.Sprintf("Re-clustering failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	resp := ReclusterResponse{
+		EraCount: len(result.Eras),
+		Message:  fmt.Sprintf("Re-detected %d eras with %d clusters", len(result.Eras), numClusters),
+	}
+
+	h.jsonResponse(w, resp, http.StatusOK)
+}
+
+// PlaylistLinkData contains data for the playlist-link partial.
+type PlaylistLinkData struct {
+	PlaylistID string
+}
+
+// ExportPlaylist creates a Spotify playlist from an era (POST /eras/{id}/playlist).
+// Returns an HTMX partial that replaces the button with an "Open Playlist" link.
+func (h *Handlers) ExportPlaylist(w http.ResponseWriter, r *http.Request) {
+	session := h.sessions.GetFromRequest(r)
+	if session == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	eraID := chi.URLParam(r, "id")
+	if eraID == "" {
+		http.Error(w, "Era ID is required", http.StatusBadRequest)
+		return
+	}
+
+	if h.eraService == nil {
+		http.Error(w, "Era service not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	ctx := r.Context()
+
+	// Create Spotify client from session token
+	httpClient := h.auth.Client(ctx, session.Token)
+	spotifyAPI := spotify.New(httpClient)
+	client := spotifyclient.New(spotifyAPI, httpClient)
+
+	playlistID, err := h.eraService.ExportToPlaylist(ctx, client, session.UserID, eraID)
+	if err != nil && !errors.Is(err, eras.ErrAlreadyExported) {
+		log.Printf("Error exporting playlist for era %s: %v", eraID, err)
+		http.Error(w, fmt.Sprintf("Failed to create playlist: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Render the playlist link partial
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := h.templates.RenderPartial(w, "playlist-link", PlaylistLinkData{PlaylistID: playlistID}); err != nil {
+		log.Printf("Error rendering playlist link: %v", err)
+		http.Error(w, "Failed to render response", http.StatusInternalServerError)
+		return
+	}
 }
 
 // jsonResponse writes a JSON response.

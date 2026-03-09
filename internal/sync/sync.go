@@ -51,7 +51,9 @@ func New(database *db.DB, opts ...Option) *Service {
 // SyncResult contains the result of a sync operation.
 type SyncResult struct {
 	TracksCount int
+	NewTracks   int // Tracks newly added (incremental) or total (full)
 	SyncedAt    time.Time
+	Incremental bool // True if this was an incremental sync
 }
 
 // CanSync checks if enough time has passed since the last sync.
@@ -80,9 +82,11 @@ func (s *Service) CanSync(ctx context.Context, userID string) (bool, time.Time, 
 	return true, time.Time{}, nil
 }
 
-// SyncLikedSongs fetches all liked songs from Spotify and persists them.
+// SyncLikedSongs fetches liked songs from Spotify and persists them.
 // Returns ErrSyncTooRecent if called within the cooldown period.
 // Set force=true to bypass the cooldown check (for first-time sync after login).
+// Uses incremental sync when a previous sync exists, falling back to full sync
+// on the first sync or when force=true.
 func (s *Service) SyncLikedSongs(ctx context.Context, client *spotify.Client, userID string, force bool) (*SyncResult, error) {
 	// Check cooldown unless forced
 	if !force {
@@ -95,22 +99,80 @@ func (s *Service) SyncLikedSongs(ctx context.Context, client *spotify.Client, us
 		}
 	}
 
-	// Fetch all liked songs from Spotify
+	// Determine if we can do incremental sync
+	lastSync, _ := s.GetLastSyncTime(ctx, userID)
+	if lastSync != nil && !force {
+		return s.incrementalSync(ctx, client, userID, *lastSync)
+	}
+
+	return s.fullSync(ctx, client, userID)
+}
+
+// fullSync fetches all liked songs from Spotify and persists them.
+func (s *Service) fullSync(ctx context.Context, client *spotify.Client, userID string) (*SyncResult, error) {
 	spotifyTracks, err := client.FetchAllLikedSongsWithMetadata(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fetching liked songs: %w", err)
 	}
 
 	if len(spotifyTracks) == 0 {
-		// Update last sync time even if no tracks
 		syncTime := time.Now()
 		if err := s.db.Users().UpdateLastSync(ctx, userID, syncTime); err != nil {
 			return nil, fmt.Errorf("updating last sync: %w", err)
 		}
-		return &SyncResult{TracksCount: 0, SyncedAt: syncTime}, nil
+		return &SyncResult{TracksCount: 0, NewTracks: 0, SyncedAt: syncTime}, nil
 	}
 
-	// Convert to database types
+	if err := s.persistTracks(ctx, userID, spotifyTracks); err != nil {
+		return nil, err
+	}
+
+	syncTime := time.Now()
+	if err := s.db.Users().UpdateLastSync(ctx, userID, syncTime); err != nil {
+		return nil, fmt.Errorf("updating last sync: %w", err)
+	}
+
+	return &SyncResult{
+		TracksCount: len(spotifyTracks),
+		NewTracks:   len(spotifyTracks),
+		SyncedAt:    syncTime,
+	}, nil
+}
+
+// incrementalSync fetches only tracks added after the last sync time.
+func (s *Service) incrementalSync(ctx context.Context, client *spotify.Client, userID string, since time.Time) (*SyncResult, error) {
+	newTracks, err := client.FetchLikedSongsSince(ctx, since)
+	if err != nil {
+		return nil, fmt.Errorf("fetching new liked songs: %w", err)
+	}
+
+	if len(newTracks) > 0 {
+		if err := s.persistTracks(ctx, userID, newTracks); err != nil {
+			return nil, err
+		}
+	}
+
+	syncTime := time.Now()
+	if err := s.db.Users().UpdateLastSync(ctx, userID, syncTime); err != nil {
+		return nil, fmt.Errorf("updating last sync: %w", err)
+	}
+
+	// Get total track count for the result
+	allTracks, err := s.db.Tracks().GetUserTracks(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("getting user tracks: %w", err)
+	}
+
+	return &SyncResult{
+		TracksCount: len(allTracks),
+		NewTracks:   len(newTracks),
+		SyncedAt:    syncTime,
+		Incremental: true,
+	}, nil
+}
+
+// persistTracks converts Spotify tracks to DB types and upserts them.
+func (s *Service) persistTracks(ctx context.Context, userID string, spotifyTracks []spotify.FullTrack) error {
 	dbTracks := make([]db.Track, len(spotifyTracks))
 	userTracks := make([]db.UserTrack, len(spotifyTracks))
 
@@ -135,26 +197,15 @@ func (s *Service) SyncLikedSongs(ctx context.Context, client *spotify.Client, us
 		}
 	}
 
-	// Batch upsert tracks
 	if err := s.db.Tracks().UpsertBatch(ctx, dbTracks); err != nil {
-		return nil, fmt.Errorf("upserting tracks: %w", err)
+		return fmt.Errorf("upserting tracks: %w", err)
 	}
 
-	// Link tracks to user
 	if err := s.db.Tracks().LinkBatchToUser(ctx, userID, userTracks); err != nil {
-		return nil, fmt.Errorf("linking tracks to user: %w", err)
+		return fmt.Errorf("linking tracks to user: %w", err)
 	}
 
-	// Update last sync time
-	syncTime := time.Now()
-	if err := s.db.Users().UpdateLastSync(ctx, userID, syncTime); err != nil {
-		return nil, fmt.Errorf("updating last sync: %w", err)
-	}
-
-	return &SyncResult{
-		TracksCount: len(spotifyTracks),
-		SyncedAt:    syncTime,
-	}, nil
+	return nil
 }
 
 // GetLastSyncTime returns the last sync time for a user.

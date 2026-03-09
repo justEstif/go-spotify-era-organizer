@@ -70,6 +70,44 @@ func (c *Client) FetchAllLikedSongsWithMetadata(ctx context.Context) ([]FullTrac
 	return tracks, nil
 }
 
+// FetchLikedSongsSince retrieves liked songs added after the given time.
+// Spotify returns tracks newest-first, so we stop paginating once we hit
+// a track with AddedAt before `since`.
+func (c *Client) FetchLikedSongsSince(ctx context.Context, since time.Time) ([]FullTrack, error) {
+	var tracks []FullTrack
+
+	page, err := c.api.CurrentUsersTracks(ctx, spotify.Limit(50))
+	if err != nil {
+		return nil, fmt.Errorf("fetching liked songs: %w", err)
+	}
+
+	for {
+		hitOld := false
+		for _, saved := range page.Tracks {
+			track := convertToFullTrack(saved)
+			if track.AddedAt.Before(since) || track.AddedAt.Equal(since) {
+				hitOld = true
+				break
+			}
+			tracks = append(tracks, track)
+		}
+
+		if hitOld {
+			break
+		}
+
+		err = c.api.NextPage(ctx, page)
+		if errors.Is(err, spotify.ErrNoMorePages) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("fetching next page: %w", err)
+		}
+	}
+
+	return tracks, nil
+}
+
 // convertTrack converts a Spotify SavedTrack to clustering.Track.
 func convertTrack(saved spotify.SavedTrack) clustering.Track {
 	// Join artist names

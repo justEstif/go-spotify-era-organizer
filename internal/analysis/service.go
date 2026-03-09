@@ -61,8 +61,13 @@ func (s *Service) RunAnalysis(ctx context.Context, client *spotify.Client, userI
 		log.Printf("Sync skipped for user %s (recently synced)", userID)
 	} else {
 		result.TracksSynced = syncResult.TracksCount
+		result.NewTracks = syncResult.NewTracks
 		result.SyncedAt = syncResult.SyncedAt
-		log.Printf("Synced %d tracks for user %s", syncResult.TracksCount, userID)
+		if syncResult.Incremental {
+			log.Printf("Incremental sync: %d new tracks for user %s (%d total)", syncResult.NewTracks, userID, syncResult.TracksCount)
+		} else {
+			log.Printf("Full sync: %d tracks for user %s", syncResult.TracksCount, userID)
+		}
 	}
 
 	// Step 2: Fetch missing tags
@@ -100,20 +105,11 @@ func (s *Service) RunSync(ctx context.Context, client *spotify.Client, userID st
 		return nil, fmt.Errorf("%w: next sync available at %s", syncpkg.ErrSyncTooRecent, nextTime.Format(time.RFC3339))
 	}
 
-	// Count tracks before sync to calculate new tracks
-	tracksBefore, _ := s.db.Tracks().GetUserTracks(ctx, userID)
-	tracksBeforeCount := len(tracksBefore)
-
 	// Run the full pipeline with force=false (cooldown already checked)
+	// NewTracks is now populated directly by the sync service.
 	result, err := s.RunAnalysis(ctx, client, userID, false)
 	if err != nil {
 		return nil, err
-	}
-
-	// Calculate new tracks
-	result.NewTracks = result.TracksSynced - tracksBeforeCount
-	if result.NewTracks < 0 {
-		result.NewTracks = 0
 	}
 
 	return result, nil

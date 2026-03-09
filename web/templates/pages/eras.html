@@ -22,6 +22,30 @@
     </header>
 
     {{if .Eras}}
+    <details class="recluster-controls">
+        <summary class="btn btn-ghost btn-sm">⚙ Adjust Clustering</summary>
+        <form class="recluster-form"
+              hx-post="/api/recluster"
+              hx-swap="none"
+              hx-on::after-request="if(event.detail.successful) window.location.reload()">
+            <label class="recluster-label">
+                Number of Eras
+                <input type="range" name="num_clusters" min="2" max="10" value="3"
+                       oninput="this.nextElementSibling.value = this.value">
+                <output>3</output>
+            </label>
+            <label class="recluster-label">
+                Min Tracks per Era
+                <input type="range" name="min_cluster_size" min="1" max="10" value="3"
+                       oninput="this.nextElementSibling.value = this.value">
+                <output>3</output>
+            </label>
+            <button type="submit" class="btn btn-primary btn-sm recluster-submit">
+                Re-analyze
+            </button>
+        </form>
+    </details>
+
     <div class="eras-grid">
         {{range .Eras}}
         <article class="era-card" data-era-id="{{.ID}}">
@@ -70,11 +94,14 @@
                 <button 
                     class="btn btn-primary btn-sm"
                     hx-post="/eras/{{.ID}}/playlist"
-                    hx-swap="outerHTML"
-                    disabled
-                    title="Coming soon"
+                    hx-target="closest .era-card__actions"
+                    hx-swap="innerHTML"
+                    hx-indicator="#playlist-loading-{{.ID}}"
                 >
-                    Create Playlist
+                    <span class="btn-text">Create Playlist</span>
+                    <span id="playlist-loading-{{.ID}}" class="htmx-indicator">
+                        <span class="spinner spinner--sm"></span>
+                    </span>
                 </button>
                 {{end}}
             </div>
@@ -448,6 +475,56 @@
 
 @keyframes spin {
     to { transform: rotate(360deg); }
+}
+
+/* Re-clustering controls */
+.recluster-controls {
+    margin-bottom: var(--space-lg);
+}
+
+.recluster-controls > summary {
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+}
+
+.recluster-controls > summary::-webkit-details-marker {
+    display: none;
+}
+
+.recluster-form {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--space-lg);
+    flex-wrap: wrap;
+    margin-top: var(--space-md);
+    padding: var(--space-lg);
+    background: var(--glass-bg, rgba(255, 255, 255, 0.04));
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
+    border-radius: var(--radius-lg, 12px);
+}
+
+.recluster-label {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    font-family: var(--font-body);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+}
+
+.recluster-label input[type="range"] {
+    width: 160px;
+    accent-color: var(--color-primary, #1db954);
+}
+
+.recluster-label output {
+    font-family: var(--font-mono, monospace);
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+    text-align: center;
+    min-width: 1.5em;
 }
 </style>
 {{end}}

@@ -1,11 +1,11 @@
 ---
 # go-spotify-era-organizer-p0yx
 title: Incremental Sync
-status: todo
+status: in-progress
 type: feature
 priority: high
 created_at: 2026-03-09T17:48:18Z
-updated_at: 2026-03-09T17:48:18Z
+updated_at: 2026-03-09T18:07:19Z
 parent: go-spotify-era-organizer-ul8b
 ---
 
