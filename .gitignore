@@ -17,3 +17,6 @@ Thumbs.db
 
 # Local data
 postgres_data/
+
+# bv (beads viewer) local config and caches
+.bv/

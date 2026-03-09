@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	spotifyauth "github.com/zmb3/spotify/v2/auth"
 
+	"github.com/justestif/go-spotify-era-organizer/internal/analysis"
 	"github.com/justestif/go-spotify-era-organizer/internal/db"
 	"github.com/justestif/go-spotify-era-organizer/internal/eras"
 	"github.com/justestif/go-spotify-era-organizer/internal/lastfm"
@@ -43,15 +44,15 @@ type ServerConfig struct {
 
 // Server is the HTTP server for the web application.
 type Server struct {
-	router      chi.Router
-	server      *http.Server
-	templates   *Templates
-	sessions    SessionManager
-	handlers    *Handlers
-	db          *db.DB
-	syncService *syncpkg.Service
-	eraService  *eras.Service
-	tagService  *tags.Service
+	router          chi.Router
+	server          *http.Server
+	templates       *Templates
+	sessions        SessionManager
+	handlers        *Handlers
+	db              *db.DB
+	syncService     *syncpkg.Service
+	eraService      *eras.Service
+	analysisService *analysis.Service
 }
 
 // NewServer creates a new web server.
@@ -85,27 +86,31 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	// Create services (only if DB is available)
 	var syncService *syncpkg.Service
 	var eraService *eras.Service
-	var tagService *tags.Service
+	var analysisService *analysis.Service
 	if cfg.DB != nil {
 		syncService = syncpkg.New(cfg.DB)
 		eraService = eras.New(cfg.DB)
 
 		// Create tag service if Last.fm API key is available
+		var tagService *tags.Service
 		if cfg.LastFMAPIKey != "" {
 			lastfmClient := lastfm.NewClient(&lastfm.Config{APIKey: cfg.LastFMAPIKey})
 			tagService = tags.NewService(lastfmClient)
 		}
+
+		// Create analysis service (orchestrates sync → tags → eras pipeline)
+		analysisService = analysis.New(cfg.DB, syncService, eraService, tagService)
 	}
 
 	// Create handlers
 	handlers := NewHandlers(HandlerDeps{
-		Auth:        auth,
-		Sessions:    sessions,
-		Templates:   templates,
-		DB:          cfg.DB,
-		SyncService: syncService,
-		EraService:  eraService,
-		TagService:  tagService,
+		Auth:            auth,
+		Sessions:        sessions,
+		Templates:       templates,
+		DB:              cfg.DB,
+		SyncService:     syncService,
+		EraService:      eraService,
+		AnalysisService: analysisService,
 	})
 
 	// Create router
@@ -116,10 +121,10 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		templates:   templates,
 		sessions:    sessions,
 		handlers:    handlers,
-		db:          cfg.DB,
-		syncService: syncService,
-		eraService:  eraService,
-		tagService:  tagService,
+		db:              cfg.DB,
+		syncService:     syncService,
+		eraService:      eraService,
+		analysisService: analysisService,
 	}
 
 	// Configure middleware

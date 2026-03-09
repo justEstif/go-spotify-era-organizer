@@ -141,17 +141,6 @@ package clustering
 func DetectMoodEras(tracks []Track, cfg TagClusterConfig) ([]MoodEra, []Track)
 ```
 
-## Task Tracking (Beads)
-
-```bash
-bd ready                    # Show ready issues
-bd show <id>               # View details
-bd create --title="..." --type=task --priority=2
-bd update <id> --status=in_progress
-bd close <id>
-bd sync --from-main        # Sync beads data
-```
-
 ## Domain Patterns
 
 **OAuth:** Session-based token storage (web application)
@@ -173,5 +162,6 @@ When building frontend, UI, web pages, or visual components, **always load the `
 ```
 
 Key resources:
+
 - `.opencode/skill/brand-guidelines/SKILL.md` - Colors, typography, mood mapping, components
 - `docs/implementation-notes.md` - Go template + HTMX patterns

@@ -17,24 +17,23 @@ import (
 	spotifyauth "github.com/zmb3/spotify/v2/auth"
 	"golang.org/x/oauth2"
 
-	"github.com/justestif/go-spotify-era-organizer/internal/clustering"
+	"github.com/justestif/go-spotify-era-organizer/internal/analysis"
 	"github.com/justestif/go-spotify-era-organizer/internal/db"
 	"github.com/justestif/go-spotify-era-organizer/internal/eras"
 	spotifyclient "github.com/justestif/go-spotify-era-organizer/internal/spotify"
 	syncpkg "github.com/justestif/go-spotify-era-organizer/internal/sync"
-	"github.com/justestif/go-spotify-era-organizer/internal/tags"
 )
 
 // Handlers contains HTTP handlers for the web application.
 type Handlers struct {
-	auth        *spotifyauth.Authenticator
-	sessions    SessionManager
-	templates   *Templates
-	oauthStates *oauthStateStore
-	db          *db.DB
-	syncService *syncpkg.Service
-	eraService  *eras.Service
-	tagService  *tags.Service
+	auth            *spotifyauth.Authenticator
+	sessions        SessionManager
+	templates       *Templates
+	oauthStates     *oauthStateStore
+	db              *db.DB
+	syncService     *syncpkg.Service
+	eraService      *eras.Service
+	analysisService *analysis.Service
 }
 
 // oauthStateStore stores OAuth state tokens server-side to avoid cookie issues
@@ -74,26 +73,26 @@ func (s *oauthStateStore) Validate(state string) bool {
 
 // HandlerDeps contains dependencies for handlers.
 type HandlerDeps struct {
-	Auth        *spotifyauth.Authenticator
-	Sessions    SessionManager
-	Templates   *Templates
-	DB          *db.DB
-	SyncService *syncpkg.Service
-	EraService  *eras.Service
-	TagService  *tags.Service
+	Auth            *spotifyauth.Authenticator
+	Sessions        SessionManager
+	Templates       *Templates
+	DB              *db.DB
+	SyncService     *syncpkg.Service
+	EraService      *eras.Service
+	AnalysisService *analysis.Service
 }
 
 // NewHandlers creates a new Handlers instance.
 func NewHandlers(deps HandlerDeps) *Handlers {
 	return &Handlers{
-		auth:        deps.Auth,
-		sessions:    deps.Sessions,
-		templates:   deps.Templates,
-		oauthStates: newOAuthStateStore(),
-		db:          deps.DB,
-		syncService: deps.SyncService,
-		eraService:  deps.EraService,
-		tagService:  deps.TagService,
+		auth:            deps.Auth,
+		sessions:        deps.Sessions,
+		templates:        deps.Templates,
+		oauthStates:     newOAuthStateStore(),
+		db:              deps.DB,
+		syncService:     deps.SyncService,
+		eraService:      deps.EraService,
+		analysisService: deps.AnalysisService,
 	}
 }
 
@@ -199,46 +198,46 @@ func (h *Handlers) Callback(w http.ResponseWriter, r *http.Request) {
 	// Set session cookie
 	h.sessions.SetCookie(w, session)
 
-	// Trigger initial sync if this is the user's first time (async)
-	if h.syncService != nil && h.db != nil {
-		go h.triggerInitialSync(token, userID)
+	// Trigger initial analysis if this is the user's first time (async)
+	if h.analysisService != nil {
+		go h.triggerInitialAnalysis(token, userID)
 	}
 
 	// Redirect to home
 	http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 }
 
-// triggerInitialSync checks if user needs initial sync and runs it.
-func (h *Handlers) triggerInitialSync(token *oauth2.Token, userID string) {
+// triggerInitialAnalysis checks if user needs initial sync and runs the full pipeline.
+func (h *Handlers) triggerInitialAnalysis(token *oauth2.Token, userID string) {
 	ctx := context.Background()
 
 	// Check if user has ever synced
-	lastSync, err := h.syncService.GetLastSyncTime(ctx, userID)
+	lastSync, err := h.analysisService.GetLastSyncTime(ctx, userID)
 	if err != nil {
 		log.Printf("Error checking last sync time for user %s: %v", userID, err)
 		return
 	}
 
-	// Only sync if never synced before
+	// Only run if never synced before
 	if lastSync != nil {
 		return
 	}
 
-	log.Printf("Starting initial sync for user %s", userID)
+	log.Printf("Starting initial analysis for user %s", userID)
 
 	// Create Spotify client with the token
 	httpClient := h.auth.Client(ctx, token)
 	spotifyAPI := spotify.New(httpClient)
 	client := spotifyclient.New(spotifyAPI)
 
-	// Run sync with force=true (bypass cooldown for initial sync)
-	result, err := h.syncService.SyncLikedSongs(ctx, client, userID, true)
+	// Run full pipeline with force=true (bypass cooldown for initial sync)
+	result, err := h.analysisService.RunAnalysis(ctx, client, userID, true)
 	if err != nil {
-		log.Printf("Error during initial sync for user %s: %v", userID, err)
+		log.Printf("Error during initial analysis for user %s: %v", userID, err)
 		return
 	}
 
-	log.Printf("Initial sync complete for user %s: %d tracks synced", userID, result.TracksCount)
+	log.Printf("Initial analysis complete for user %s: %d tracks, %d eras", userID, result.TracksSynced, result.ErasDetected)
 }
 
 // Logout clears the session and redirects to home (POST /auth/logout).
@@ -308,12 +307,12 @@ func (h *Handlers) Eras(w http.ResponseWriter, r *http.Request) {
 
 	// Get sync status for the header
 	var syncStatus *SyncStatusData
-	if h.syncService != nil {
-		lastSync, err := h.syncService.GetLastSyncTime(ctx, session.UserID)
+	if h.analysisService != nil {
+		lastSync, err := h.analysisService.GetLastSyncTime(ctx, session.UserID)
 		if err != nil {
 			log.Printf("Error getting last sync time: %v", err)
 		}
-		canSync, nextTime, err := h.syncService.CanSync(ctx, session.UserID)
+		canSync, nextTime, err := h.analysisService.CanSync(ctx, session.UserID)
 		if err != nil {
 			log.Printf("Error checking sync status: %v", err)
 		}
@@ -356,15 +355,11 @@ func (h *Handlers) EraTracks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract era ID from URL path
-	// Path format: /eras/{id}/tracks
-	path := r.URL.Path
-	parts := splitPath(path)
-	if len(parts) < 3 || parts[0] != "eras" || parts[2] != "tracks" {
-		http.Error(w, "Invalid path", http.StatusBadRequest)
+	eraID := chi.URLParam(r, "id")
+	if eraID == "" {
+		http.Error(w, "Era ID is required", http.StatusBadRequest)
 		return
 	}
-	eraID := parts[1]
 
 	ctx := r.Context()
 
@@ -399,33 +394,6 @@ func (h *Handlers) EraTracks(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to render tracks", http.StatusInternalServerError)
 		return
 	}
-}
-
-// splitPath splits a URL path into segments, removing empty strings.
-func splitPath(path string) []string {
-	var parts []string
-	for _, p := range splitString(path, '/') {
-		if p != "" {
-			parts = append(parts, p)
-		}
-	}
-	return parts
-}
-
-// splitString splits a string by a separator.
-func splitString(s string, sep rune) []string {
-	var parts []string
-	current := ""
-	for _, c := range s {
-		if c == sep {
-			parts = append(parts, current)
-			current = ""
-		} else {
-			current += string(c)
-		}
-	}
-	parts = append(parts, current)
-	return parts
 }
 
 // AnalyzeResponse is the JSON response for POST /api/analyze.
@@ -468,159 +436,35 @@ func (h *Handlers) Analyze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.analysisService == nil {
+		h.jsonError(w, "Analysis service not configured", http.StatusServiceUnavailable)
+		return
+	}
+
 	ctx := r.Context()
 	userID := session.UserID
 
-	// Verify required services are available
-	if h.db == nil {
-		h.jsonError(w, "Database not configured", http.StatusServiceUnavailable)
-		return
-	}
-	if h.syncService == nil {
-		h.jsonError(w, "Sync service not configured", http.StatusServiceUnavailable)
-		return
-	}
-	if h.eraService == nil {
-		h.jsonError(w, "Era service not configured", http.StatusServiceUnavailable)
-		return
-	}
-
-	// Get session token for Spotify API calls
-	token := session.Token
-
-	// Step 1: Sync liked songs (skip if recently synced)
-	httpClient := h.auth.Client(ctx, token)
+	// Create Spotify client
+	httpClient := h.auth.Client(ctx, session.Token)
 	spotifyAPI := spotify.New(httpClient)
 	client := spotifyclient.New(spotifyAPI)
 
 	log.Printf("Starting analysis for user %s", userID)
 
-	// Try to sync (will return ErrSyncTooRecent if recently synced)
-	syncResult, err := h.syncService.SyncLikedSongs(ctx, client, userID, false)
+	result, err := h.analysisService.RunAnalysis(ctx, client, userID, false)
 	if err != nil {
-		// If it's just a cooldown error, that's fine - continue with existing data
-		if !errors.Is(err, syncpkg.ErrSyncTooRecent) {
-			h.jsonError(w, fmt.Sprintf("Sync failed: %v", err), http.StatusInternalServerError)
-			return
-		}
-		log.Printf("Sync skipped for user %s (recently synced)", userID)
-	} else {
-		log.Printf("Synced %d tracks for user %s", syncResult.TracksCount, userID)
-	}
-
-	// Step 2: Fetch tags for tracks without tags (if tag service is available)
-	if h.tagService != nil {
-		if err := h.fetchMissingTags(ctx, userID); err != nil {
-			log.Printf("Warning: tag fetching failed for user %s: %v", userID, err)
-			// Continue anyway - we can still detect eras with whatever tags we have
-		}
-	} else {
-		log.Printf("Tag service not available, skipping tag fetch for user %s", userID)
-	}
-
-	// Step 3: Detect and persist eras
-	cfg := clustering.DefaultTagClusterConfig()
-	result, err := h.eraService.DetectAndPersist(ctx, userID, cfg)
-	if err != nil {
-		h.jsonError(w, fmt.Sprintf("Era detection failed: %v", err), http.StatusInternalServerError)
+		h.jsonError(w, fmt.Sprintf("Analysis failed: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("Detected %d eras for user %s (%d outliers)", len(result.Eras), userID, result.OutlierCount)
-
-	// Return success response
 	resp := AnalyzeResponse{
-		EraCount:     len(result.Eras),
+		EraCount:     result.ErasDetected,
 		OutlierCount: result.OutlierCount,
 		TotalTracks:  result.TotalTracks,
-		Message:      fmt.Sprintf("Detected %d eras from %d tracks", len(result.Eras), result.TotalTracks),
+		Message:      fmt.Sprintf("Detected %d eras from %d tracks", result.ErasDetected, result.TotalTracks),
 	}
 
 	h.jsonResponse(w, resp, http.StatusOK)
-}
-
-// fetchMissingTags fetches Last.fm tags for tracks that don't have any.
-func (h *Handlers) fetchMissingTags(ctx context.Context, userID string) error {
-	// Get all user's tracks
-	tracks, err := h.db.Tracks().GetUserTracks(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("getting user tracks: %w", err)
-	}
-
-	if len(tracks) == 0 {
-		return nil
-	}
-
-	// Get track IDs
-	trackIDs := make([]string, len(tracks))
-	for i, t := range tracks {
-		trackIDs[i] = t.ID
-	}
-
-	// Find tracks without tags
-	missingIDs, err := h.db.Tags().GetTracksWithoutTags(ctx, trackIDs)
-	if err != nil {
-		return fmt.Errorf("finding tracks without tags: %w", err)
-	}
-
-	if len(missingIDs) == 0 {
-		return nil
-	}
-
-	log.Printf("Fetching tags for %d tracks", len(missingIDs))
-
-	// Build lookup map for track info
-	trackMap := make(map[string]db.Track)
-	for _, t := range tracks {
-		trackMap[t.ID] = t
-	}
-
-	// Convert to tag service format
-	tagTracks := make([]tags.Track, 0, len(missingIDs))
-	for _, id := range missingIDs {
-		t, ok := trackMap[id]
-		if !ok {
-			continue
-		}
-		tagTracks = append(tagTracks, tags.Track{
-			ID:     t.ID,
-			Name:   t.Name,
-			Artist: t.Artist,
-		})
-	}
-
-	// Fetch tags
-	results, err := h.tagService.FetchTagsForTracks(ctx, tagTracks)
-	if err != nil {
-		return fmt.Errorf("fetching tags: %w", err)
-	}
-
-	// Convert and persist tags
-	now := time.Now()
-	var dbTags []db.TrackTag
-	for _, result := range results {
-		if result.Error != nil || len(result.Tags) == 0 {
-			continue
-		}
-		for _, tag := range result.Tags {
-			dbTags = append(dbTags, db.TrackTag{
-				TrackID:   result.TrackID,
-				TagName:   tag.Name,
-				TagCount:  tag.Count,
-				Source:    string(result.Source),
-				FetchedAt: now,
-			})
-		}
-	}
-
-	if len(dbTags) > 0 {
-		if err := h.db.Tags().UpsertBatch(ctx, dbTags); err != nil {
-			return fmt.Errorf("persisting tags: %w", err)
-		}
-		log.Printf("Persisted %d tags for user %s", len(dbTags), userID)
-	}
-
-	return nil
 }
 
 // GetEras returns all eras for the authenticated user (GET /api/eras).
@@ -759,20 +603,20 @@ func (h *Handlers) GetSyncStatus(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	if h.syncService == nil {
-		h.jsonError(w, "Sync service not configured", http.StatusServiceUnavailable)
+	if h.analysisService == nil {
+		h.jsonError(w, "Analysis service not configured", http.StatusServiceUnavailable)
 		return
 	}
 
 	// Get last sync time
-	lastSync, err := h.syncService.GetLastSyncTime(ctx, session.UserID)
+	lastSync, err := h.analysisService.GetLastSyncTime(ctx, session.UserID)
 	if err != nil {
 		h.jsonError(w, fmt.Sprintf("Failed to get sync status: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	// Check if sync is allowed
-	canSync, nextTime, err := h.syncService.CanSync(ctx, session.UserID)
+	canSync, nextTime, err := h.analysisService.CanSync(ctx, session.UserID)
 	if err != nil {
 		h.jsonError(w, fmt.Sprintf("Failed to check sync status: %v", err), http.StatusInternalServerError)
 		return
@@ -797,25 +641,16 @@ func (h *Handlers) SyncLibrary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.analysisService == nil {
+		h.jsonError(w, "Analysis service not configured", http.StatusServiceUnavailable)
+		return
+	}
+
 	ctx := r.Context()
 	userID := session.UserID
 
-	// Verify required services are available
-	if h.db == nil {
-		h.jsonError(w, "Database not configured", http.StatusServiceUnavailable)
-		return
-	}
-	if h.syncService == nil {
-		h.jsonError(w, "Sync service not configured", http.StatusServiceUnavailable)
-		return
-	}
-	if h.eraService == nil {
-		h.jsonError(w, "Era service not configured", http.StatusServiceUnavailable)
-		return
-	}
-
-	// Check if sync is allowed (respect cooldown)
-	canSync, nextTime, err := h.syncService.CanSync(ctx, userID)
+	// Check cooldown before doing work
+	canSync, nextTime, err := h.analysisService.CanSync(ctx, userID)
 	if err != nil {
 		h.jsonError(w, fmt.Sprintf("Failed to check sync status: %v", err), http.StatusInternalServerError)
 		return
@@ -829,60 +664,29 @@ func (h *Handlers) SyncLibrary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get session token for Spotify API calls
-	token := session.Token
-
 	// Create Spotify client
-	httpClient := h.auth.Client(ctx, token)
+	httpClient := h.auth.Client(ctx, session.Token)
 	spotifyAPI := spotify.New(httpClient)
 	client := spotifyclient.New(spotifyAPI)
 
 	log.Printf("Starting sync for user %s", userID)
 
-	// Count tracks before sync to calculate new tracks
-	tracksBefore, _ := h.db.Tracks().GetUserTracks(ctx, userID)
-	tracksBeforeCount := len(tracksBefore)
-
-	// Sync liked songs from Spotify
-	syncResult, err := h.syncService.SyncLikedSongs(ctx, client, userID, false)
+	result, err := h.analysisService.RunSync(ctx, client, userID)
 	if err != nil {
+		if errors.Is(err, syncpkg.ErrSyncTooRecent) {
+			h.jsonError(w, "Sync not available yet", http.StatusLocked)
+			return
+		}
 		h.jsonError(w, fmt.Sprintf("Sync failed: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("Synced %d tracks for user %s", syncResult.TracksCount, userID)
-
-	// Calculate new tracks added
-	newTracks := syncResult.TracksCount - tracksBeforeCount
-	if newTracks < 0 {
-		newTracks = 0
-	}
-
-	// Fetch tags for new songs only (existing caching handles this)
-	if h.tagService != nil {
-		if err := h.fetchMissingTags(ctx, userID); err != nil {
-			log.Printf("Warning: tag fetching failed for user %s: %v", userID, err)
-			// Continue anyway - we can still detect eras with existing tags
-		}
-	}
-
-	// Re-detect and persist eras
-	cfg := clustering.DefaultTagClusterConfig()
-	eraResult, err := h.eraService.DetectAndPersist(ctx, userID, cfg)
-	if err != nil {
-		h.jsonError(w, fmt.Sprintf("Era detection failed: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	log.Printf("Detected %d eras for user %s after sync", len(eraResult.Eras), userID)
-
-	// Build response
 	resp := SyncResponse{
-		TracksSynced: syncResult.TracksCount,
-		NewTracks:    newTracks,
-		ErasDetected: len(eraResult.Eras),
-		SyncedAt:     syncResult.SyncedAt,
-		Message:      fmt.Sprintf("Synced %d tracks, detected %d eras", syncResult.TracksCount, len(eraResult.Eras)),
+		TracksSynced: result.TracksSynced,
+		NewTracks:    result.NewTracks,
+		ErasDetected: result.ErasDetected,
+		SyncedAt:     result.SyncedAt,
+		Message:      fmt.Sprintf("Synced %d tracks, detected %d eras", result.TracksSynced, result.ErasDetected),
 	}
 
 	h.jsonResponse(w, resp, http.StatusOK)

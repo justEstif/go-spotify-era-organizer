@@ -1,7 +1,9 @@
 [tools]
-"npm:beads-ui" = "latest"
+# "npm:beads-ui" = "latest"
 "go:honnef.co/go/tools/cmd/staticcheck" = "latest"
 "go:github.com/golang-migrate/migrate/v4/cmd/migrate" = { version = "latest", go_set_goflags = "-tags=postgres" }
+"go:github.com/zjrosen/perles" = "latest"
+"go:github.com/Dicklesworthstone/beads_viewer/cmd/bv" = "latest"
 
 # set values in mise.local.toml (gitignored)
 [env]
