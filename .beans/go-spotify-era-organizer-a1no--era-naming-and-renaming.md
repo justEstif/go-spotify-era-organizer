@@ -1,11 +1,11 @@
 ---
 # go-spotify-era-organizer-a1no
 title: Era Naming and Renaming
-status: todo
+status: in-progress
 type: feature
 priority: normal
 created_at: 2026-03-09T17:48:27Z
-updated_at: 2026-03-09T17:48:27Z
+updated_at: 2026-03-09T18:22:00Z
 parent: go-spotify-era-organizer-e7gj
 ---
 

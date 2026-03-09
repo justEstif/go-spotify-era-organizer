@@ -1,0 +1,75 @@
+{{define "job-progress"}}
+<div class="job-progress" 
+     hx-ext="sse" 
+     sse-connect="/api/jobs/{{.JobID}}/progress"
+     sse-close="close">
+    <div class="job-progress__bar-container">
+        <div class="job-progress__bar" id="job-bar-{{.JobID}}" style="width: 0%"></div>
+    </div>
+    <span class="job-progress__message" id="job-msg-{{.JobID}}">Starting...</span>
+</div>
+<script>
+(function() {
+    var container = document.querySelector('[sse-connect="/api/jobs/{{.JobID}}/progress"]');
+    if (!container) return;
+    var source = new EventSource('/api/jobs/{{.JobID}}/progress');
+    var bar = document.getElementById('job-bar-{{.JobID}}');
+    var msg = document.getElementById('job-msg-{{.JobID}}');
+    source.onmessage = function(e) {
+        try {
+            var data = JSON.parse(e.data);
+            if (bar) bar.style.width = data.progress + '%';
+            if (msg) msg.textContent = data.message;
+            if (data.status === 'completed') {
+                source.close();
+                container.classList.add('job-progress--done');
+                setTimeout(function() { window.location.reload(); }, 1000);
+            } else if (data.status === 'failed') {
+                source.close();
+                container.classList.add('job-progress--error');
+                if (msg) msg.textContent = 'Error: ' + (data.error || data.message);
+            }
+        } catch(err) {}
+    };
+    source.onerror = function() {
+        source.close();
+    };
+})();
+</script>
+<style>
+.job-progress {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm, 0.5rem);
+    padding: var(--space-md, 1rem);
+}
+.job-progress__bar-container {
+    width: 100%;
+    height: 6px;
+    background: var(--bg-elevated, #1a1a1d);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.job-progress__bar {
+    height: 100%;
+    background: var(--accent-primary, #1db954);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+    box-shadow: 0 0 8px color-mix(in srgb, var(--accent-primary, #1db954) 50%, transparent);
+}
+.job-progress__message {
+    font-family: var(--font-body, sans-serif);
+    font-size: var(--text-xs, 0.75rem);
+    color: var(--text-secondary, #a0a0a0);
+}
+.job-progress--done .job-progress__bar {
+    background: var(--accent-primary, #1db954);
+}
+.job-progress--error .job-progress__bar {
+    background: var(--color-error, #e74c3c);
+}
+.job-progress--error .job-progress__message {
+    color: var(--color-error, #e74c3c);
+}
+</style>
+{{end}}

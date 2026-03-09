@@ -89,6 +89,16 @@ func (r *SessionRepository) UpdateToken(ctx context.Context, id, accessToken, re
 	return nil
 }
 
+// ActiveCount returns the number of non-expired sessions.
+func (r *SessionRepository) ActiveCount(ctx context.Context) (int, error) {
+	var count int
+	err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM sessions WHERE expires_at > NOW()`).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("counting active sessions: %w", err)
+	}
+	return count, nil
+}
+
 // DeleteExpired removes all expired sessions.
 func (r *SessionRepository) DeleteExpired(ctx context.Context) (int64, error) {
 	query := `DELETE FROM sessions WHERE expires_at <= NOW()`

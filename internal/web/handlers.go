@@ -23,6 +23,7 @@ import (
 	"github.com/justestif/go-spotify-era-organizer/internal/clustering"
 	"github.com/justestif/go-spotify-era-organizer/internal/db"
 	"github.com/justestif/go-spotify-era-organizer/internal/eras"
+	"github.com/justestif/go-spotify-era-organizer/internal/jobs"
 	spotifyclient "github.com/justestif/go-spotify-era-organizer/internal/spotify"
 	syncpkg "github.com/justestif/go-spotify-era-organizer/internal/sync"
 )
@@ -37,6 +38,8 @@ type Handlers struct {
 	syncService     *syncpkg.Service
 	eraService      *eras.Service
 	analysisService *analysis.Service
+	jobQueue        *jobs.Queue
+	adminToken      string
 }
 
 // oauthStateStore stores OAuth state tokens server-side to avoid cookie issues
@@ -83,6 +86,8 @@ type HandlerDeps struct {
 	SyncService     *syncpkg.Service
 	EraService      *eras.Service
 	AnalysisService *analysis.Service
+	JobQueue        *jobs.Queue
+	AdminToken      string
 }
 
 // NewHandlers creates a new Handlers instance.
@@ -96,6 +101,8 @@ func NewHandlers(deps HandlerDeps) *Handlers {
 		syncService:     deps.SyncService,
 		eraService:      deps.EraService,
 		analysisService: deps.AnalysisService,
+		jobQueue:        deps.JobQueue,
+		adminToken:      deps.AdminToken,
 	}
 }
 
@@ -335,6 +342,7 @@ func (h *Handlers) Timeline(w http.ResponseWriter, r *http.Request) {
 				timelineEras = append(timelineEras, TimelineEraData{
 					ID:         era.ID.String(),
 					Name:       era.Name,
+					CustomName: era.CustomName,
 					TopTags:    era.TopTags,
 					StartDate:  era.StartDate,
 					EndDate:    era.EndDate,
@@ -525,6 +533,7 @@ func (h *Handlers) Eras(w http.ResponseWriter, r *http.Request) {
 			erasData = append(erasData, EraData{
 				ID:         era.ID.String(),
 				Name:       era.Name,
+				CustomName: era.CustomName,
 				TopTags:    era.TopTags,
 				StartDate:  era.StartDate,
 				EndDate:    era.EndDate,
@@ -926,6 +935,50 @@ func (h *Handlers) ExportPlaylist(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// RenameEra handles renaming an era (PUT /eras/{id}/name).
+// Accepts a "name" form field. Empty name resets to auto-generated.
+func (h *Handlers) RenameEra(w http.ResponseWriter, r *http.Request) {
+	session := h.sessions.GetFromRequest(r)
+	if session == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	eraID := chi.URLParam(r, "id")
+	if eraID == "" {
+		http.Error(w, "Era ID is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	name := r.FormValue("name")
+
+	// Validate length
+	if len(name) > 100 {
+		http.Error(w, "Name must be 100 characters or less", http.StatusBadRequest)
+		return
+	}
+
+	if h.eraService == nil {
+		http.Error(w, "Era service not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	ctx := r.Context()
+	if err := h.eraService.RenameEra(ctx, session.UserID, eraID, name); err != nil {
+		log.Printf("Error renaming era %s: %v", eraID, err)
+		http.Error(w, "Failed to rename era", http.StatusInternalServerError)
+		return
+	}
+
+	// Return 204 No Content — HTMX swap is "none"
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // AssignOutlier handles assigning an outlier track to an era (POST /api/outliers/assign).
 func (h *Handlers) AssignOutlier(w http.ResponseWriter, r *http.Request) {
 	session := h.sessions.GetFromRequest(r)
@@ -961,6 +1014,123 @@ func (h *Handlers) AssignOutlier(w http.ResponseWriter, r *http.Request) {
 
 	// Return empty response — HTMX swap removes the item
 	w.WriteHeader(http.StatusOK)
+}
+
+// Search handles the search page (GET /search).
+func (h *Handlers) Search(w http.ResponseWriter, r *http.Request) {
+	session := h.sessions.GetFromRequest(r)
+	if session == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusTemporaryRedirect)
+		return
+	}
+
+	ctx := r.Context()
+	userID := session.UserID
+
+	query := r.URL.Query().Get("q")
+	eraFilter := r.URL.Query().Get("era")
+	pageStr := r.URL.Query().Get("page")
+	page := 1
+	if pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+
+	const pageSize = 50
+	offset := (page - 1) * pageSize
+
+	// Search tracks
+	results, totalCount, err := h.db.Tracks().Search(ctx, userID, query, eraFilter, pageSize, offset)
+	if err != nil {
+		log.Printf("Error searching tracks: %v", err)
+		http.Error(w, "Failed to search tracks", http.StatusInternalServerError)
+		return
+	}
+
+	// Convert to template data
+	var resultData []SearchResultData
+	for _, r := range results {
+		album := ""
+		if r.Album != nil {
+			album = *r.Album
+		}
+		eraName := ""
+		eraID := ""
+		if r.EraName != nil {
+			eraName = *r.EraName
+		}
+		if r.EraID != nil {
+			eraID = *r.EraID
+		}
+		resultData = append(resultData, SearchResultData{
+			ID:      r.ID,
+			Name:    r.Name,
+			Artist:  r.Artist,
+			Album:   album,
+			EraName: eraName,
+			EraID:   eraID,
+			HasEra:  r.EraName != nil,
+		})
+	}
+
+	// Load eras for filter dropdown
+	var erasData []EraData
+	if h.eraService != nil {
+		dbEras, err := h.eraService.GetUserEras(ctx, userID)
+		if err != nil {
+			log.Printf("Error getting user eras for search filter: %v", err)
+		} else {
+			for _, era := range dbEras {
+				erasData = append(erasData, EraData{
+					ID:   era.ID.String(),
+					Name: era.Name,
+				})
+			}
+		}
+	}
+
+	totalPages := (totalCount + pageSize - 1) / pageSize
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	data := SearchPageData{
+		PageData: PageData{
+			Title:       "Search - Spotify Era Organizer",
+			CurrentPath: r.URL.Path,
+			User: &UserData{
+				ID:   session.UserID,
+				Name: session.UserName,
+			},
+		},
+		Query:      query,
+		EraFilter:  eraFilter,
+		Results:    resultData,
+		Eras:       erasData,
+		TotalCount: totalCount,
+		Page:       page,
+		TotalPages: totalPages,
+		HasPrev:    page > 1,
+		HasNext:    page < totalPages,
+	}
+
+	// HTMX partial rendering
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if err := h.templates.RenderPartial(w, "search-results", data); err != nil {
+			log.Printf("Error rendering search results partial: %v", err)
+			http.Error(w, "Failed to render results", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := h.templates.Render(w, "search", data); err != nil {
+		log.Printf("Error rendering search template: %v", err)
+		http.Error(w, "Failed to render page", http.StatusInternalServerError)
+		return
+	}
 }
 
 // jsonResponse writes a JSON response.
@@ -1039,6 +1209,187 @@ func (h *Handlers) GetSyncStatus(w http.ResponseWriter, r *http.Request) {
 	h.jsonResponse(w, resp, http.StatusOK)
 }
 
+// SubmitJobResponse is the JSON response for job submission.
+type SubmitJobResponse struct {
+	JobID string `json:"job_id"`
+}
+
+// SubmitSyncJob submits a background sync job (POST /api/jobs/sync).
+func (h *Handlers) SubmitSyncJob(w http.ResponseWriter, r *http.Request) {
+	session := h.sessions.GetFromRequest(r)
+	if session == nil {
+		h.jsonError(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if h.jobQueue == nil || h.analysisService == nil {
+		h.jsonError(w, "Job queue not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	meta := map[string]any{
+		"token": session.Token,
+	}
+
+	jobID, err := h.jobQueue.SubmitWithMeta(session.UserID, "sync", meta)
+	if err != nil {
+		if errors.Is(err, jobs.ErrDuplicateJob) {
+			// Return the existing job ID — client can connect to its progress
+			h.jsonResponse(w, SubmitJobResponse{JobID: jobID}, http.StatusOK)
+			return
+		}
+		h.jsonError(w, fmt.Sprintf("Failed to submit job: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// If HTMX request, return progress bar HTML
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if err := h.templates.RenderPartial(w, "job-progress", map[string]string{"JobID": jobID}); err != nil {
+			log.Printf("Error rendering job-progress partial: %v", err)
+			h.jsonResponse(w, SubmitJobResponse{JobID: jobID}, http.StatusOK)
+		}
+		return
+	}
+
+	h.jsonResponse(w, SubmitJobResponse{JobID: jobID}, http.StatusOK)
+}
+
+// SubmitAnalyzeJob submits a background analysis job (POST /api/jobs/analyze).
+func (h *Handlers) SubmitAnalyzeJob(w http.ResponseWriter, r *http.Request) {
+	session := h.sessions.GetFromRequest(r)
+	if session == nil {
+		h.jsonError(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if h.jobQueue == nil || h.analysisService == nil {
+		h.jsonError(w, "Job queue not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	meta := map[string]any{
+		"token": session.Token,
+	}
+
+	jobID, err := h.jobQueue.SubmitWithMeta(session.UserID, "analyze", meta)
+	if err != nil {
+		if errors.Is(err, jobs.ErrDuplicateJob) {
+			h.jsonResponse(w, SubmitJobResponse{JobID: jobID}, http.StatusOK)
+			return
+		}
+		h.jsonError(w, fmt.Sprintf("Failed to submit job: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// If HTMX request, return progress bar HTML
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if err := h.templates.RenderPartial(w, "job-progress", map[string]string{"JobID": jobID}); err != nil {
+			log.Printf("Error rendering job-progress partial: %v", err)
+			h.jsonResponse(w, SubmitJobResponse{JobID: jobID}, http.StatusOK)
+		}
+		return
+	}
+
+	h.jsonResponse(w, SubmitJobResponse{JobID: jobID}, http.StatusOK)
+}
+
+// JobProgress streams job progress updates via SSE (GET /api/jobs/{id}/progress).
+func (h *Handlers) JobProgress(w http.ResponseWriter, r *http.Request) {
+	session := h.sessions.GetFromRequest(r)
+	if session == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	jobID := chi.URLParam(r, "id")
+	if jobID == "" {
+		http.Error(w, "Job ID is required", http.StatusBadRequest)
+		return
+	}
+
+	if h.jobQueue == nil {
+		http.Error(w, "Job queue not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Verify the job belongs to this user
+	job, ok := h.jobQueue.Get(jobID)
+	if !ok {
+		http.Error(w, "Job not found", http.StatusNotFound)
+		return
+	}
+	if job.UserID != session.UserID {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	// Set SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	// Send current state immediately
+	h.writeSSEEvent(w, flusher, job)
+
+	// If already terminal, we're done
+	if job.Status == jobs.StatusCompleted || job.Status == jobs.StatusFailed {
+		return
+	}
+
+	// Subscribe for updates
+	ch, unsub := h.jobQueue.Subscribe(jobID)
+	defer unsub()
+
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case update, ok := <-ch:
+			if !ok {
+				return
+			}
+			h.writeSSEEvent(w, flusher, update)
+			if update.Status == jobs.StatusCompleted || update.Status == jobs.StatusFailed {
+				return
+			}
+		}
+	}
+}
+
+// writeSSEEvent writes a single SSE event with job state.
+func (h *Handlers) writeSSEEvent(w http.ResponseWriter, flusher http.Flusher, job *jobs.Job) {
+	data := fmt.Sprintf(`{"progress":%d,"message":%q,"status":%q,"error":%q}`,
+		job.Progress, job.Message, job.Status, job.Error)
+	fmt.Fprintf(w, "data: %s\n\n", data)
+	flusher.Flush()
+}
+
+// ActiveJobs returns a list of the user's active jobs (GET /api/jobs/active).
+func (h *Handlers) ActiveJobs(w http.ResponseWriter, r *http.Request) {
+	session := h.sessions.GetFromRequest(r)
+	if session == nil {
+		h.jsonError(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if h.jobQueue == nil {
+		h.jsonResponse(w, []any{}, http.StatusOK)
+		return
+	}
+
+	activeJobs := h.jobQueue.GetActiveForUser(session.UserID)
+	h.jsonResponse(w, activeJobs, http.StatusOK)
+}
+
 // SyncLibrary syncs liked songs from Spotify and re-detects eras (POST /api/sync).
 func (h *Handlers) SyncLibrary(w http.ResponseWriter, r *http.Request) {
 	session := h.sessions.GetFromRequest(r)
@@ -1083,6 +1434,10 @@ func (h *Handlers) SyncLibrary(w http.ResponseWriter, r *http.Request) {
 			h.jsonError(w, "Sync not available yet", http.StatusLocked)
 			return
 		}
+		if errors.Is(err, syncpkg.ErrSyncInProgress) {
+			h.jsonError(w, "Sync already in progress", http.StatusConflict)
+			return
+		}
 		h.jsonError(w, fmt.Sprintf("Sync failed: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -1093,6 +1448,64 @@ func (h *Handlers) SyncLibrary(w http.ResponseWriter, r *http.Request) {
 		ErasDetected: result.ErasDetected,
 		SyncedAt:     result.SyncedAt,
 		Message:      fmt.Sprintf("Synced %d tracks, detected %d eras", result.TracksSynced, result.ErasDetected),
+	}
+
+	h.jsonResponse(w, resp, http.StatusOK)
+}
+
+// AdminStatusResponse is the JSON response for GET /api/admin/status.
+type AdminStatusResponse struct {
+	TotalUsers     int `json:"total_users"`
+	ActiveSessions int `json:"active_sessions"`
+	RecentSyncs    int `json:"recent_syncs"`
+}
+
+// AdminStatus returns system status information (GET /api/admin/status).
+// Protected by Bearer token from ADMIN_TOKEN env var.
+func (h *Handlers) AdminStatus(w http.ResponseWriter, r *http.Request) {
+	// If no admin token configured, endpoint is disabled
+	if h.adminToken == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Validate Authorization header
+	auth := r.Header.Get("Authorization")
+	if auth == "" || auth != "Bearer "+h.adminToken {
+		h.jsonError(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if h.db == nil {
+		h.jsonError(w, "Database not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	ctx := r.Context()
+
+	totalUsers, err := h.db.Users().Count(ctx)
+	if err != nil {
+		h.jsonError(w, fmt.Sprintf("Failed to count users: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	activeSessions, err := h.db.Sessions().ActiveCount(ctx)
+	if err != nil {
+		h.jsonError(w, fmt.Sprintf("Failed to count sessions: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	since := time.Now().Add(-24 * time.Hour)
+	recentUsers, err := h.db.Users().RecentlyActive(ctx, since)
+	if err != nil {
+		h.jsonError(w, fmt.Sprintf("Failed to get recent syncs: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	resp := AdminStatusResponse{
+		TotalUsers:     totalUsers,
+		ActiveSessions: activeSessions,
+		RecentSyncs:    len(recentUsers),
 	}
 
 	h.jsonResponse(w, resp, http.StatusOK)

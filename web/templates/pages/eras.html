@@ -17,6 +17,7 @@
             {{if .SyncStatus}}
             {{template "sync-status" .SyncStatus}}
             {{end}}
+            <a href="/search" class="btn btn-ghost btn-sm">Search</a>
             <a href="/timeline" class="btn btn-ghost btn-sm">Timeline View</a>
             <a href="/stats" class="btn btn-secondary">Stats</a>
             <a href="/" class="btn btn-secondary">Back</a>
@@ -52,9 +53,20 @@
         {{range .Eras}}
         <article class="era-card" data-era-id="{{.ID}}">
             <div class="era-card__header">
-                <h2 class="era-card__title">{{.Name}}</h2>
+                <h2 class="era-card__title era-card__title--editable" 
+                    hx-put="/eras/{{.ID}}/name"
+                    hx-trigger="blur"
+                    hx-vals='js:{"name": event.target.innerText.trim()}'
+                    hx-swap="none"
+                    contenteditable="true"
+                    title="Click to rename"
+                    spellcheck="false">{{displayName .CustomName .Name}}</h2>
+                <span class="era-card__edit-hint">✎</span>
                 <span class="era-card__dates">{{formatDateRange .StartDate .EndDate}}</span>
             </div>
+            {{if .CustomName}}
+            <div class="era-card__auto-name">{{.Name}}</div>
+            {{end}}
             
             <div class="era-card__mood-bar"></div>
             
@@ -130,7 +142,7 @@
                         name="era_id">
                     <option value="">Assign to era...</option>
                     {{range $.Eras}}
-                    <option value="{{.ID}}">{{.Name}}</option>
+                    <option value="{{.ID}}">{{displayName .CustomName .Name}}</option>
                     {{end}}
                 </select>
             </div>
@@ -156,16 +168,13 @@
         <div class="empty-state__actions">
             <button 
                 class="btn btn-primary"
-                hx-post="/api/analyze"
-                hx-indicator="#analyze-loading"
-                hx-swap="none"
-                hx-on::after-request="if(event.detail.successful) window.location.reload()"
+                hx-post="/api/jobs/analyze"
+                hx-target="#progress-container"
+                hx-swap="innerHTML"
             >
                 <span class="btn-text">Analyze My Library</span>
-                <span id="analyze-loading" class="htmx-indicator">
-                    <span class="spinner"></span>
-                </span>
             </button>
+            <div id="progress-container"></div>
             <a href="/" class="btn btn-secondary">Go Home</a>
         </div>
     </div>
@@ -294,6 +303,41 @@
     letter-spacing: 0.05em;
     color: var(--text-primary);
     margin: 0;
+}
+
+.era-card__title--editable {
+    cursor: text;
+    outline: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color var(--transition-fast);
+    min-width: 2em;
+}
+
+.era-card__title--editable:hover {
+    border-bottom-color: var(--border-subtle);
+}
+
+.era-card__title--editable:focus {
+    border-bottom-color: var(--accent-primary);
+}
+
+.era-card__edit-hint {
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+}
+
+.era-card__header:hover .era-card__edit-hint {
+    opacity: 1;
+}
+
+.era-card__auto-name {
+    font-family: var(--font-body);
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+    font-style: italic;
+    margin-top: calc(-1 * var(--space-sm));
 }
 
 .era-card__dates {

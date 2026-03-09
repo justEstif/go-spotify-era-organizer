@@ -228,6 +228,69 @@ func (r *TrackRepository) LinkBatchToUser(ctx context.Context, userID string, tr
 	return nil
 }
 
+// SearchResult includes track data plus era membership info.
+type SearchResult struct {
+	Track
+	EraName *string
+	EraID   *string
+}
+
+// Search finds user tracks matching a query with optional era filter, returning results and total count.
+func (r *TrackRepository) Search(ctx context.Context, userID, query string, eraID string, limit, offset int) ([]SearchResult, int, error) {
+	whereClause := `
+		WHERE ut.user_id = $1
+		  AND ($2 = '' OR (
+		    t.name ILIKE '%' || $2 || '%'
+		    OR t.artist ILIKE '%' || $2 || '%'
+		  ))
+		  AND ($3 = '' OR e.id::text = $3)
+	`
+
+	fromClause := `
+		FROM tracks t
+		JOIN user_tracks ut ON t.id = ut.track_id
+		LEFT JOIN era_tracks et ON t.id = et.track_id
+		LEFT JOIN eras e ON et.era_id = e.id AND e.user_id = $1
+	`
+
+	// Count query
+	countQuery := `SELECT COUNT(DISTINCT t.id) ` + fromClause + whereClause
+	var total int
+	err := r.pool.QueryRow(ctx, countQuery, userID, query, eraID).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("counting search results: %w", err)
+	}
+
+	// Results query
+	resultsQuery := `
+		SELECT DISTINCT ON (t.name, t.id)
+		       t.id, t.name, t.artist, t.album, t.album_id, t.duration_ms, t.created_at,
+		       e.name as era_name, e.id::text as era_id
+	` + fromClause + whereClause + `
+		ORDER BY t.name, t.id
+		LIMIT $4 OFFSET $5
+	`
+
+	rows, err := r.pool.Query(ctx, resultsQuery, userID, query, eraID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("searching tracks: %w", err)
+	}
+	defer rows.Close()
+
+	var results []SearchResult
+	for rows.Next() {
+		var sr SearchResult
+		if err := rows.Scan(
+			&sr.ID, &sr.Name, &sr.Artist, &sr.Album, &sr.AlbumID, &sr.DurationMs, &sr.CreatedAt,
+			&sr.EraName, &sr.EraID,
+		); err != nil {
+			return nil, 0, fmt.Errorf("scanning search result: %w", err)
+		}
+		results = append(results, sr)
+	}
+	return results, total, rows.Err()
+}
+
 // UnlinkAllFromUser removes all tracks from a user's library.
 func (r *TrackRepository) UnlinkAllFromUser(ctx context.Context, userID string) error {
 	query := `DELETE FROM user_tracks WHERE user_id = $1`

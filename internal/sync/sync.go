@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/justestif/go-spotify-era-organizer/internal/db"
@@ -15,6 +16,9 @@ import (
 var (
 	// ErrSyncTooRecent is returned when sync is attempted within the cooldown period.
 	ErrSyncTooRecent = errors.New("sync attempted too recently")
+
+	// ErrSyncInProgress is returned when a sync is already running for the user.
+	ErrSyncInProgress = errors.New("sync already in progress for this user")
 )
 
 // DefaultSyncCooldown is the default time between allowed syncs (1 hour).
@@ -24,6 +28,7 @@ const DefaultSyncCooldown = 1 * time.Hour
 type Service struct {
 	db           *db.DB
 	syncCooldown time.Duration
+	syncLocks    sync.Map // map[string]*sync.Mutex - per-user sync locks
 }
 
 // Option configures a Service.
@@ -82,12 +87,31 @@ func (s *Service) CanSync(ctx context.Context, userID string) (bool, time.Time, 
 	return true, time.Time{}, nil
 }
 
+// acquireUserLock attempts to acquire a per-user sync lock.
+// Returns an unlock function and true if acquired, or nil and false if already held.
+func (s *Service) acquireUserLock(userID string) (unlock func(), ok bool) {
+	val, _ := s.syncLocks.LoadOrStore(userID, &sync.Mutex{})
+	mu := val.(*sync.Mutex)
+	if !mu.TryLock() {
+		return nil, false
+	}
+	return mu.Unlock, true
+}
+
 // SyncLikedSongs fetches liked songs from Spotify and persists them.
 // Returns ErrSyncTooRecent if called within the cooldown period.
+// Returns ErrSyncInProgress if a sync is already running for the user.
 // Set force=true to bypass the cooldown check (for first-time sync after login).
 // Uses incremental sync when a previous sync exists, falling back to full sync
 // on the first sync or when force=true.
 func (s *Service) SyncLikedSongs(ctx context.Context, client *spotify.Client, userID string, force bool) (*SyncResult, error) {
+	// Acquire per-user lock to prevent concurrent syncs
+	unlock, ok := s.acquireUserLock(userID)
+	if !ok {
+		return nil, ErrSyncInProgress
+	}
+	defer unlock()
+
 	// Check cooldown unless forced
 	if !force {
 		canSync, nextTime, err := s.CanSync(ctx, userID)

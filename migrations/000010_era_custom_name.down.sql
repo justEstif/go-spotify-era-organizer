@@ -1,0 +1,1 @@
+ALTER TABLE eras DROP COLUMN IF EXISTS custom_name;

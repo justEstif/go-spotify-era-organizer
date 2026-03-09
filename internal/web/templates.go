@@ -124,6 +124,14 @@ func defaultFuncs() template.FuncMap {
 			return fmt.Sprintf("hsl(%.0f, %.0f%%, %.0f%%)", hue, saturation, lightness)
 		},
 
+		// displayName returns the custom name if set, otherwise the auto-generated name.
+		"displayName": func(customName *string, autoName string) string {
+			if customName != nil && *customName != "" {
+				return *customName
+			}
+			return autoName
+		},
+
 		// formatDate formats a time as "Jan 2, 2006"
 		"formatDate": func(t time.Time) string {
 			return t.Format("Jan 2, 2006")
@@ -303,6 +311,7 @@ type ErasPageData struct {
 type EraData struct {
 	ID         string
 	Name       string
+	CustomName *string
 	TopTags    []string
 	StartDate  time.Time
 	EndDate    time.Time
@@ -352,6 +361,31 @@ type MonthlyStat struct {
 	Pct   float64
 }
 
+// SearchPageData contains data for the search page template.
+type SearchPageData struct {
+	PageData
+	Query      string
+	EraFilter  string
+	Results    []SearchResultData
+	Eras       []EraData
+	TotalCount int
+	Page       int
+	TotalPages int
+	HasPrev    bool
+	HasNext    bool
+}
+
+// SearchResultData contains data for a single search result.
+type SearchResultData struct {
+	ID      string
+	Name    string
+	Artist  string
+	Album   string
+	EraName string // empty if no era
+	EraID   string // empty if no era
+	HasEra  bool
+}
+
 // TimelinePageData contains data for the timeline page template.
 type TimelinePageData struct {
 	PageData
@@ -363,6 +397,7 @@ type TimelinePageData struct {
 type TimelineEraData struct {
 	ID         string
 	Name       string
+	CustomName *string
 	TopTags    []string
 	StartDate  time.Time
 	EndDate    time.Time

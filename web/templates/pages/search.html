@@ -1,0 +1,213 @@
+{{define "title"}}Search - Spotify Era Organizer{{end}}
+
+{{define "content"}}
+<section class="search-page">
+    <header class="search-header">
+        <h1>Search Your Library</h1>
+    </header>
+
+    <form class="search-form"
+          hx-get="/search"
+          hx-target="#search-results"
+          hx-swap="innerHTML"
+          hx-push-url="true"
+          hx-trigger="submit, keyup changed delay:300ms from:#search-input, change from:[name=era]">
+        <div class="search-input-group">
+            <input type="text" name="q" id="search-input"
+                   value="{{.Query}}"
+                   placeholder="Search by track or artist..."
+                   class="search-input" autofocus>
+        </div>
+        <div class="search-filters">
+            <select name="era" class="search-select">
+                <option value="">All Eras</option>
+                {{range .Eras}}
+                <option value="{{.ID}}" {{if eq $.EraFilter .ID}}selected{{end}}>{{.Name}}</option>
+                {{end}}
+            </select>
+        </div>
+    </form>
+
+    <div id="search-results">
+        {{template "search-results" .}}
+    </div>
+</section>
+{{end}}
+
+{{define "scripts"}}
+<style>
+.search-page {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: var(--space-lg);
+}
+
+.search-header {
+    margin-bottom: var(--space-lg);
+}
+
+.search-header h1 {
+    font-family: var(--font-display, 'Bebas Neue', sans-serif);
+    font-size: 2.5rem;
+    letter-spacing: 0.04em;
+    color: var(--text-primary, #fff);
+}
+
+.search-form {
+    display: flex;
+    gap: var(--space-md);
+    margin-bottom: var(--space-lg);
+    flex-wrap: wrap;
+}
+
+.search-input-group {
+    flex: 1;
+    min-width: 200px;
+}
+
+.search-input {
+    width: 100%;
+    padding: var(--space-sm) var(--space-md);
+    font-size: 1.1rem;
+    font-family: var(--font-mono, 'JetBrains Mono', monospace);
+    background: var(--surface-1, rgba(255,255,255,0.05));
+    border: 1px solid var(--border-subtle, rgba(255,255,255,0.1));
+    border-radius: var(--radius-md, 8px);
+    color: var(--text-primary, #fff);
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.search-input:focus {
+    border-color: var(--accent, #1DB954);
+    box-shadow: 0 0 0 3px rgba(29, 185, 84, 0.15);
+}
+
+.search-input::placeholder {
+    color: var(--text-muted, rgba(255,255,255,0.4));
+}
+
+.search-filters {
+    display: flex;
+    align-items: center;
+}
+
+.search-select {
+    padding: var(--space-sm) var(--space-md);
+    font-size: 0.95rem;
+    font-family: var(--font-mono, 'JetBrains Mono', monospace);
+    background: var(--surface-1, rgba(255,255,255,0.05));
+    border: 1px solid var(--border-subtle, rgba(255,255,255,0.1));
+    border-radius: var(--radius-md, 8px);
+    color: var(--text-primary, #fff);
+    outline: none;
+    cursor: pointer;
+    min-width: 160px;
+}
+
+.search-select:focus {
+    border-color: var(--accent, #1DB954);
+}
+
+.search-select option {
+    background: var(--bg-primary, #0a0a0a);
+    color: var(--text-primary, #fff);
+}
+
+.results-meta {
+    padding: var(--space-sm) 0;
+    font-size: 0.85rem;
+    color: var(--text-muted, rgba(255,255,255,0.5));
+    font-family: var(--font-mono, 'JetBrains Mono', monospace);
+    border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+    margin-bottom: var(--space-sm);
+}
+
+.results-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.result-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-sm) var(--space-md);
+    border-radius: var(--radius-sm, 6px);
+    background: var(--surface-1, rgba(255,255,255,0.03));
+    backdrop-filter: blur(8px);
+    transition: background 0.15s;
+}
+
+.result-item:hover {
+    background: var(--surface-2, rgba(255,255,255,0.07));
+}
+
+.result-item__info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+}
+
+.result-item__name {
+    font-family: var(--font-body, 'Oswald', sans-serif);
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--text-primary, #fff);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.result-item__artist {
+    font-family: var(--font-mono, 'JetBrains Mono', monospace);
+    font-size: 0.8rem;
+    color: var(--text-secondary, rgba(255,255,255,0.6));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.result-item__era {
+    flex-shrink: 0;
+    margin-left: var(--space-md);
+}
+
+.tag {
+    display: inline-block;
+    padding: 2px 10px;
+    font-size: 0.75rem;
+    font-family: var(--font-mono, 'JetBrains Mono', monospace);
+    border-radius: 999px;
+    background: var(--accent, #1DB954);
+    color: var(--bg-primary, #0a0a0a);
+    text-decoration: none;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.tag--muted {
+    background: var(--surface-2, rgba(255,255,255,0.08));
+    color: var(--text-muted, rgba(255,255,255,0.4));
+}
+
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-md);
+    margin-top: var(--space-lg);
+    padding-top: var(--space-md);
+    border-top: 1px solid var(--border-subtle, rgba(255,255,255,0.08));
+}
+
+.pagination__info {
+    font-family: var(--font-mono, 'JetBrains Mono', monospace);
+    font-size: 0.85rem;
+    color: var(--text-muted, rgba(255,255,255,0.5));
+}
+</style>
+{{end}}

@@ -18,7 +18,9 @@ import (
 	"github.com/justestif/go-spotify-era-organizer/internal/analysis"
 	"github.com/justestif/go-spotify-era-organizer/internal/db"
 	"github.com/justestif/go-spotify-era-organizer/internal/eras"
+	"github.com/justestif/go-spotify-era-organizer/internal/jobs"
 	"github.com/justestif/go-spotify-era-organizer/internal/lastfm"
+	"github.com/justestif/go-spotify-era-organizer/internal/ratelimit"
 	syncpkg "github.com/justestif/go-spotify-era-organizer/internal/sync"
 	"github.com/justestif/go-spotify-era-organizer/internal/tags"
 )
@@ -40,6 +42,7 @@ type ServerConfig struct {
 	StaticFS     fs.FS
 	DB           *db.DB // Optional - if nil, uses in-memory sessions
 	LastFMAPIKey string // Optional - if empty, tag fetching is disabled
+	AdminToken   string // Optional - if empty, admin endpoint disabled
 }
 
 // Server is the HTTP server for the web application.
@@ -53,6 +56,8 @@ type Server struct {
 	syncService     *syncpkg.Service
 	eraService      *eras.Service
 	analysisService *analysis.Service
+	jobQueue        *jobs.Queue
+	adminToken      string
 }
 
 // NewServer creates a new web server.
@@ -102,6 +107,15 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		analysisService = analysis.New(cfg.DB, syncService, eraService, tagService)
 	}
 
+	// Create job queue and register handlers
+	jobQueue := jobs.New()
+	if analysisService != nil {
+		factory := &jobs.AuthClientFactory{Auth: auth}
+		jobQueue.Register("sync", jobs.SyncHandler(analysisService, factory))
+		jobQueue.Register("analyze", jobs.AnalyzeHandler(analysisService, factory))
+		jobQueue.Register("recluster", jobs.ReclusterHandler(analysisService))
+	}
+
 	// Create handlers
 	handlers := NewHandlers(HandlerDeps{
 		Auth:            auth,
@@ -111,7 +125,21 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		SyncService:     syncService,
 		EraService:      eraService,
 		AnalysisService: analysisService,
+		AdminToken:      cfg.AdminToken,
+		JobQueue:        jobQueue,
 	})
+
+	// Create per-user rate limiter (10 req/s, burst 20)
+	limiter := ratelimit.New(10, 20)
+
+	// Start periodic cleanup goroutine
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			limiter.Cleanup()
+		}
+	}()
 
 	// Create router
 	router := chi.NewRouter()
@@ -125,10 +153,12 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		syncService:     syncService,
 		eraService:      eraService,
 		analysisService: analysisService,
+		jobQueue:        jobQueue,
+		adminToken:      cfg.AdminToken,
 	}
 
 	// Configure middleware
-	s.setupMiddleware()
+	s.setupMiddleware(limiter)
 
 	// Configure routes
 	s.setupRoutes(cfg.StaticFS)
@@ -146,12 +176,13 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 }
 
 // setupMiddleware configures middleware for the router.
-func (s *Server) setupMiddleware() {
+func (s *Server) setupMiddleware(limiter *ratelimit.Limiter) {
 	s.router.Use(middleware.RequestID)
 	s.router.Use(middleware.RealIP)
 	s.router.Use(middleware.Logger)
 	s.router.Use(middleware.Recoverer)
 	s.router.Use(middleware.Compress(5))
+	s.router.Use(RateLimitMiddleware(limiter, s.sessions))
 }
 
 // setupRoutes configures routes for the application.
@@ -163,9 +194,11 @@ func (s *Server) setupRoutes(staticFS fs.FS) {
 	// Pages
 	s.router.Get("/", s.handlers.Home)
 	s.router.Get("/eras", s.handlers.Eras)
+	s.router.Get("/search", s.handlers.Search)
 	s.router.Get("/stats", s.handlers.Stats)
 	s.router.Get("/timeline", s.handlers.Timeline)
 	s.router.Get("/eras/{id}/tracks", s.handlers.EraTracks)
+	s.router.Put("/eras/{id}/name", s.handlers.RenameEra)
 	s.router.Post("/eras/{id}/playlist", s.handlers.ExportPlaylist)
 
 	// Auth routes
@@ -181,6 +214,15 @@ func (s *Server) setupRoutes(staticFS fs.FS) {
 	s.router.Post("/api/outliers/assign", s.handlers.AssignOutlier)
 	s.router.Post("/api/sync", s.handlers.SyncLibrary)
 	s.router.Get("/api/sync/status", s.handlers.GetSyncStatus)
+
+	// Job queue routes
+	s.router.Post("/api/jobs/sync", s.handlers.SubmitSyncJob)
+	s.router.Post("/api/jobs/analyze", s.handlers.SubmitAnalyzeJob)
+	s.router.Get("/api/jobs/{id}/progress", s.handlers.JobProgress)
+	s.router.Get("/api/jobs/active", s.handlers.ActiveJobs)
+
+	// Admin routes
+	s.router.Get("/api/admin/status", s.handlers.AdminStatus)
 }
 
 // Start starts the HTTP server.

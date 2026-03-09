@@ -80,6 +80,41 @@ func (r *UserRepository) Upsert(ctx context.Context, user *User) error {
 	return nil
 }
 
+// Count returns the total number of users.
+func (r *UserRepository) Count(ctx context.Context) (int, error) {
+	var count int
+	err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM users`).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("counting users: %w", err)
+	}
+	return count, nil
+}
+
+// RecentlyActive returns users who have synced since the given time.
+func (r *UserRepository) RecentlyActive(ctx context.Context, since time.Time) ([]User, error) {
+	query := `
+		SELECT id, display_name, created_at, updated_at, last_sync_at
+		FROM users
+		WHERE last_sync_at >= $1
+		ORDER BY last_sync_at DESC
+	`
+	rows, err := r.pool.Query(ctx, query, since)
+	if err != nil {
+		return nil, fmt.Errorf("querying recently active users: %w", err)
+	}
+	defer rows.Close()
+
+	var users []User
+	for rows.Next() {
+		var u User
+		if err := rows.Scan(&u.ID, &u.DisplayName, &u.CreatedAt, &u.UpdatedAt, &u.LastSyncAt); err != nil {
+			return nil, fmt.Errorf("scanning user: %w", err)
+		}
+		users = append(users, u)
+	}
+	return users, rows.Err()
+}
+
 // UpdateLastSync updates the last sync timestamp for a user.
 func (r *UserRepository) UpdateLastSync(ctx context.Context, id string, syncTime time.Time) error {
 	query := `

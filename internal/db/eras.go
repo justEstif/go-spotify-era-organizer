@@ -25,8 +25,8 @@ func (r *EraRepository) Create(ctx context.Context, era *Era, trackIDs []string)
 
 	// Insert era
 	eraQuery := `
-		INSERT INTO eras (id, user_id, name, top_tags, start_date, end_date, playlist_id, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+		INSERT INTO eras (id, user_id, name, top_tags, start_date, end_date, playlist_id, custom_name, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
 		RETURNING created_at
 	`
 	if era.ID == uuid.Nil {
@@ -40,6 +40,7 @@ func (r *EraRepository) Create(ctx context.Context, era *Era, trackIDs []string)
 		era.StartDate,
 		era.EndDate,
 		era.PlaylistID,
+		era.CustomName,
 	).Scan(&era.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("inserting era: %w", err)
@@ -66,7 +67,7 @@ func (r *EraRepository) Create(ctx context.Context, era *Era, trackIDs []string)
 // Get retrieves an era by ID.
 func (r *EraRepository) Get(ctx context.Context, id uuid.UUID) (*Era, error) {
 	query := `
-		SELECT id, user_id, name, top_tags, start_date, end_date, playlist_id, created_at
+		SELECT id, user_id, name, top_tags, start_date, end_date, playlist_id, custom_name, created_at
 		FROM eras
 		WHERE id = $1
 	`
@@ -79,6 +80,7 @@ func (r *EraRepository) Get(ctx context.Context, id uuid.UUID) (*Era, error) {
 		&era.StartDate,
 		&era.EndDate,
 		&era.PlaylistID,
+		&era.CustomName,
 		&era.CreatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -93,7 +95,7 @@ func (r *EraRepository) Get(ctx context.Context, id uuid.UUID) (*Era, error) {
 // GetForUser retrieves all eras for a user, ordered by start date desc.
 func (r *EraRepository) GetForUser(ctx context.Context, userID string) ([]Era, error) {
 	query := `
-		SELECT id, user_id, name, top_tags, start_date, end_date, playlist_id, created_at
+		SELECT id, user_id, name, top_tags, start_date, end_date, playlist_id, custom_name, created_at
 		FROM eras
 		WHERE user_id = $1
 		ORDER BY start_date DESC
@@ -115,6 +117,7 @@ func (r *EraRepository) GetForUser(ctx context.Context, userID string) ([]Era, e
 			&era.StartDate,
 			&era.EndDate,
 			&era.PlaylistID,
+			&era.CustomName,
 			&era.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scanning era: %w", err)
@@ -166,6 +169,32 @@ func (r *EraRepository) GetTrackCount(ctx context.Context, eraID uuid.UUID) (int
 		return 0, fmt.Errorf("counting era tracks: %w", err)
 	}
 	return count, nil
+}
+
+// UpdateCustomName sets a user's custom name for an era.
+func (r *EraRepository) UpdateCustomName(ctx context.Context, eraID uuid.UUID, customName string) error {
+	query := `UPDATE eras SET custom_name = $2 WHERE id = $1`
+	result, err := r.pool.Exec(ctx, query, eraID, customName)
+	if err != nil {
+		return fmt.Errorf("updating custom name: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ClearCustomName removes the custom name from an era, reverting to the auto-generated name.
+func (r *EraRepository) ClearCustomName(ctx context.Context, eraID uuid.UUID) error {
+	query := `UPDATE eras SET custom_name = NULL WHERE id = $1`
+	result, err := r.pool.Exec(ctx, query, eraID)
+	if err != nil {
+		return fmt.Errorf("clearing custom name: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // UpdatePlaylistID sets the Spotify playlist ID for an era.

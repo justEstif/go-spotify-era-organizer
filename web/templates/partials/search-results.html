@@ -1,0 +1,35 @@
+{{define "search-results"}}
+<div class="results-meta">
+    <span>{{.TotalCount}} track{{if ne .TotalCount 1}}s{{end}} found</span>
+</div>
+<div class="results-list">
+    {{range .Results}}
+    <div class="result-item">
+        <div class="result-item__info">
+            <span class="result-item__name">{{.Name}}</span>
+            <span class="result-item__artist">{{.Artist}}</span>
+        </div>
+        {{if .HasEra}}
+        <a href="/eras" class="result-item__era tag">{{.EraName}}</a>
+        {{else}}
+        <span class="result-item__era tag tag--muted">No era</span>
+        {{end}}
+    </div>
+    {{end}}
+</div>
+{{if or .HasPrev .HasNext}}
+<nav class="pagination">
+    {{if .HasPrev}}
+    <a href="/search?q={{.Query}}&era={{.EraFilter}}&page={{add .Page -1}}" class="btn btn-ghost btn-sm"
+       hx-get="/search?q={{.Query}}&era={{.EraFilter}}&page={{add .Page -1}}"
+       hx-target="#search-results" hx-swap="innerHTML" hx-push-url="true">← Previous</a>
+    {{end}}
+    <span class="pagination__info">Page {{.Page}} of {{.TotalPages}}</span>
+    {{if .HasNext}}
+    <a href="/search?q={{.Query}}&era={{.EraFilter}}&page={{add .Page 1}}" class="btn btn-ghost btn-sm"
+       hx-get="/search?q={{.Query}}&era={{.EraFilter}}&page={{add .Page 1}}"
+       hx-target="#search-results" hx-swap="innerHTML" hx-push-url="true">Next →</a>
+    {{end}}
+</nav>
+{{end}}
+{{end}}

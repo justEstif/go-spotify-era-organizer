@@ -33,9 +33,9 @@
             {{range .Eras}}
             <div class="timeline-era"
                  style="left: {{printf "%.1f" .OffsetPct}}%; width: {{printf "%.1f" .WidthPct}}%; --era-hue: {{.ColorHue}}; --era-row: {{.Row}};"
-                 title="{{.Name}} — {{.TrackCount}} tracks ({{formatDateRange .StartDate .EndDate}})">
+                 title="{{displayName .CustomName .Name}} — {{.TrackCount}} tracks ({{formatDateRange .StartDate .EndDate}})">
                 <div class="timeline-era__label">
-                    <span class="timeline-era__name">{{.Name}}</span>
+                    <span class="timeline-era__name">{{displayName .CustomName .Name}}</span>
                     <span class="timeline-era__count">{{.TrackCount}} tracks</span>
                 </div>
                 <div class="timeline-era__tags">
@@ -52,7 +52,7 @@
         <a href="/eras" class="timeline-list__item" style="--era-hue: {{.ColorHue}};">
             <div class="timeline-list__dot"></div>
             <div class="timeline-list__content">
-                <span class="timeline-list__name">{{.Name}}</span>
+                <span class="timeline-list__name">{{displayName .CustomName .Name}}</span>
                 <span class="timeline-list__dates">{{formatDateRange .StartDate .EndDate}}</span>
                 <span class="timeline-list__count">{{.TrackCount}} tracks</span>
                 <div class="timeline-list__tags">

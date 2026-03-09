@@ -110,6 +110,29 @@ func (s *Service) DetectAndPersist(ctx context.Context, userID string, cfg clust
 	}, nil
 }
 
+// RenameEra sets or clears a custom name for an era.
+// An empty newName clears the custom name, reverting to the auto-generated name.
+func (s *Service) RenameEra(ctx context.Context, userID, eraID, newName string) error {
+	id, err := uuid.Parse(eraID)
+	if err != nil {
+		return fmt.Errorf("invalid era ID: %w", err)
+	}
+
+	// Get era and verify ownership
+	era, err := s.db.Eras().Get(ctx, id)
+	if err != nil {
+		return fmt.Errorf("getting era: %w", err)
+	}
+	if era.UserID != userID {
+		return fmt.Errorf("era does not belong to user")
+	}
+
+	if newName == "" {
+		return s.db.Eras().ClearCustomName(ctx, id)
+	}
+	return s.db.Eras().UpdateCustomName(ctx, id, newName)
+}
+
 // GetUserEras retrieves all persisted eras for a user.
 func (s *Service) GetUserEras(ctx context.Context, userID string) ([]db.Era, error) {
 	eras, err := s.db.Eras().GetForUser(ctx, userID)

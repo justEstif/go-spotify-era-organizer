@@ -61,6 +61,7 @@ type Era struct {
 	TopTags    []string
 	StartDate  time.Time
 	EndDate    time.Time
+	CustomName *string // nullable - user's custom name, overrides generated Name
 	PlaylistID *string // nullable - Spotify playlist ID if created
 	CreatedAt  time.Time
 }
