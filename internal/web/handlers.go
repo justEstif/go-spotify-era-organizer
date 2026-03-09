@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/zmb3/spotify/v2"
 	spotifyauth "github.com/zmb3/spotify/v2/auth"
 	"golang.org/x/oauth2"
@@ -262,6 +263,233 @@ func generateOAuthState() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
+// Timeline handles the timeline page (GET /timeline).
+func (h *Handlers) Timeline(w http.ResponseWriter, r *http.Request) {
+	session := h.sessions.GetFromRequest(r)
+	if session == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusTemporaryRedirect)
+		return
+	}
+
+	ctx := r.Context()
+
+	var timelineEras []TimelineEraData
+	var totalSpan TimelineSpan
+
+	if h.eraService != nil {
+		dbEras, err := h.eraService.GetUserEras(ctx, session.UserID)
+		if err != nil {
+			log.Printf("Error getting user eras: %v", err)
+			http.Error(w, "Failed to load eras", http.StatusInternalServerError)
+			return
+		}
+
+		if len(dbEras) > 0 {
+			// Find total span
+			totalSpan.Start = dbEras[0].StartDate
+			totalSpan.End = dbEras[0].EndDate
+			for _, era := range dbEras {
+				if era.StartDate.Before(totalSpan.Start) {
+					totalSpan.Start = era.StartDate
+				}
+				if era.EndDate.After(totalSpan.End) {
+					totalSpan.End = era.EndDate
+				}
+			}
+
+			totalDays := totalSpan.End.Sub(totalSpan.Start).Hours() / 24
+			if totalDays < 1 {
+				totalDays = 1
+			}
+
+			for i, era := range dbEras {
+				trackCount := 0
+				if h.db != nil {
+					count, err := h.db.Eras().GetTrackCount(ctx, era.ID)
+					if err == nil {
+						trackCount = count
+					}
+				}
+
+				offsetDays := era.StartDate.Sub(totalSpan.Start).Hours() / 24
+				widthDays := era.EndDate.Sub(era.StartDate).Hours() / 24
+				if widthDays < 1 {
+					widthDays = 1
+				}
+				offsetPct := (offsetDays / totalDays) * 100
+				widthPct := (widthDays / totalDays) * 100
+				if widthPct < 3 {
+					widthPct = 3
+				}
+
+				// Compute color hue from first top tag hash
+				colorHue := (i * 67) % 360 // spread hues evenly
+				if len(era.TopTags) > 0 {
+					h := 0
+					for _, c := range era.TopTags[0] {
+						h = (h*31 + int(c)) % 360
+					}
+					colorHue = h
+				}
+
+				timelineEras = append(timelineEras, TimelineEraData{
+					ID:         era.ID.String(),
+					Name:       era.Name,
+					TopTags:    era.TopTags,
+					StartDate:  era.StartDate,
+					EndDate:    era.EndDate,
+					TrackCount: trackCount,
+					OffsetPct:  offsetPct,
+					WidthPct:   widthPct,
+					ColorHue:   colorHue,
+					Row:        i,
+				})
+			}
+		}
+	}
+
+	data := TimelinePageData{
+		PageData: PageData{
+			Title:       "Timeline - Spotify Era Organizer",
+			CurrentPath: r.URL.Path,
+			User: &UserData{
+				ID:   session.UserID,
+				Name: session.UserName,
+			},
+		},
+		Eras:      timelineEras,
+		TotalSpan: totalSpan,
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := h.templates.Render(w, "timeline", data); err != nil {
+		log.Printf("Error rendering timeline template: %v", err)
+		http.Error(w, "Failed to render page", http.StatusInternalServerError)
+		return
+	}
+}
+
+// Stats handles the stats dashboard page (GET /stats).
+func (h *Handlers) Stats(w http.ResponseWriter, r *http.Request) {
+	session := h.sessions.GetFromRequest(r)
+	if session == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusTemporaryRedirect)
+		return
+	}
+
+	ctx := r.Context()
+	userID := session.UserID
+
+	data := StatsPageData{
+		PageData: PageData{
+			Title:       "Stats - Spotify Era Organizer",
+			CurrentPath: r.URL.Path,
+			User: &UserData{
+				ID:   session.UserID,
+				Name: session.UserName,
+			},
+		},
+	}
+
+	if h.db != nil {
+		stats := h.db.Stats()
+
+		totalTracks, err := stats.GetTotalTracks(ctx, userID)
+		if err != nil {
+			log.Printf("Error getting total tracks: %v", err)
+		}
+		data.TotalTracks = totalTracks
+
+		totalArtists, err := stats.GetTotalArtists(ctx, userID)
+		if err != nil {
+			log.Printf("Error getting total artists: %v", err)
+		}
+		data.TotalArtists = totalArtists
+
+		totalEras, err := stats.GetTotalEras(ctx, userID)
+		if err != nil {
+			log.Printf("Error getting total eras: %v", err)
+		}
+		data.TotalEras = totalEras
+
+		first, last, err := stats.GetDateRange(ctx, userID)
+		if err != nil {
+			log.Printf("Error getting date range: %v", err)
+		}
+		data.FirstAdded = first
+		data.LastAdded = last
+
+		topTags, err := stats.GetTopTags(ctx, userID, 15)
+		if err != nil {
+			log.Printf("Error getting top tags: %v", err)
+		}
+		if len(topTags) > 0 {
+			maxCount := topTags[0].Count
+			for _, t := range topTags {
+				pct := 0.0
+				if maxCount > 0 {
+					pct = float64(t.Count) / float64(maxCount) * 100
+				}
+				data.TopTags = append(data.TopTags, TagStat{
+					Name:    t.Name,
+					Count:   t.Count,
+					Percent: pct,
+				})
+			}
+		}
+
+		topArtists, err := stats.GetTopArtists(ctx, userID, 15)
+		if err != nil {
+			log.Printf("Error getting top artists: %v", err)
+		}
+		if len(topArtists) > 0 {
+			maxCount := topArtists[0].Count
+			for _, a := range topArtists {
+				pct := 0.0
+				if maxCount > 0 {
+					pct = float64(a.Count) / float64(maxCount) * 100
+				}
+				data.TopArtists = append(data.TopArtists, ArtistStat{
+					Name:    a.Name,
+					Count:   a.Count,
+					Percent: pct,
+				})
+			}
+		}
+
+		monthly, err := stats.GetTracksPerMonth(ctx, userID)
+		if err != nil {
+			log.Printf("Error getting monthly data: %v", err)
+		}
+		if len(monthly) > 0 {
+			maxCount := 0
+			for _, m := range monthly {
+				if m.Count > maxCount {
+					maxCount = m.Count
+				}
+			}
+			for _, m := range monthly {
+				pct := 0.0
+				if maxCount > 0 {
+					pct = float64(m.Count) / float64(maxCount) * 100
+				}
+				data.MonthlyData = append(data.MonthlyData, MonthlyStat{
+					Month: m.Month,
+					Count: m.Count,
+					Pct:   pct,
+				})
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := h.templates.Render(w, "stats", data); err != nil {
+		log.Printf("Error rendering stats template: %v", err)
+		http.Error(w, "Failed to render page", http.StatusInternalServerError)
+		return
+	}
+}
+
 // Eras handles the eras page (GET /eras).
 func (h *Handlers) Eras(w http.ResponseWriter, r *http.Request) {
 	session := h.sessions.GetFromRequest(r)
@@ -326,6 +554,28 @@ func (h *Handlers) Eras(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Load outlier tracks
+	var outlierData []TrackData
+	if h.db != nil {
+		outlierTracks, err := h.db.Outliers().GetForUser(ctx, session.UserID)
+		if err != nil {
+			log.Printf("Error getting outlier tracks: %v", err)
+		} else {
+			for _, t := range outlierTracks {
+				album := ""
+				if t.Album != nil {
+					album = *t.Album
+				}
+				outlierData = append(outlierData, TrackData{
+					ID:     t.ID,
+					Name:   t.Name,
+					Artist: t.Artist,
+					Album:  album,
+				})
+			}
+		}
+	}
+
 	data := ErasPageData{
 		PageData: PageData{
 			Title:       "Your Eras - Spotify Era Organizer",
@@ -335,8 +585,10 @@ func (h *Handlers) Eras(w http.ResponseWriter, r *http.Request) {
 				Name: session.UserName,
 			},
 		},
-		Eras:       erasData,
-		SyncStatus: syncStatus,
+		Eras:         erasData,
+		Outliers:     outlierData,
+		OutlierCount: len(outlierData),
+		SyncStatus:   syncStatus,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -672,6 +924,43 @@ func (h *Handlers) ExportPlaylist(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to render response", http.StatusInternalServerError)
 		return
 	}
+}
+
+// AssignOutlier handles assigning an outlier track to an era (POST /api/outliers/assign).
+func (h *Handlers) AssignOutlier(w http.ResponseWriter, r *http.Request) {
+	session := h.sessions.GetFromRequest(r)
+	if session == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	trackID := r.FormValue("track_id")
+	eraIDStr := r.FormValue("era_id")
+	if trackID == "" || eraIDStr == "" {
+		http.Error(w, "track_id and era_id are required", http.StatusBadRequest)
+		return
+	}
+
+	eraID, err := uuid.Parse(eraIDStr)
+	if err != nil {
+		http.Error(w, "Invalid era ID", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+	if err := h.db.Outliers().AssignToEra(ctx, session.UserID, trackID, eraID); err != nil {
+		log.Printf("Error assigning outlier %s to era %s: %v", trackID, eraIDStr, err)
+		http.Error(w, "Failed to assign track", http.StatusInternalServerError)
+		return
+	}
+
+	// Return empty response — HTMX swap removes the item
+	w.WriteHeader(http.StatusOK)
 }
 
 // jsonResponse writes a JSON response.

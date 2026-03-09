@@ -29,9 +29,10 @@ func New(database *db.DB) *Service {
 
 // DetectResult contains the outcome of era detection.
 type DetectResult struct {
-	Eras         []db.Era // Detected and persisted eras
-	OutlierCount int      // Number of tracks that didn't fit any era
-	TotalTracks  int      // Total tracks analyzed
+	Eras            []db.Era // Detected and persisted eras
+	OutlierCount    int      // Number of tracks that didn't fit any era
+	OutlierTrackIDs []string // IDs of tracks that didn't fit any era
+	TotalTracks     int      // Total tracks analyzed
 }
 
 // DetectAndPersist runs era detection on a user's tracks and saves results.
@@ -92,10 +93,20 @@ func (s *Service) DetectAndPersist(ctx context.Context, userID string, cfg clust
 		persistedEras = append(persistedEras, dbEra)
 	}
 
+	// Extract outlier track IDs and persist them
+	outlierTrackIDs := make([]string, len(outliers))
+	for i, o := range outliers {
+		outlierTrackIDs[i] = o.ID
+	}
+	if err := s.db.Outliers().SaveForUser(ctx, userID, outlierTrackIDs); err != nil {
+		return nil, fmt.Errorf("saving outlier tracks: %w", err)
+	}
+
 	return &DetectResult{
-		Eras:         persistedEras,
-		OutlierCount: len(outliers),
-		TotalTracks:  len(tracks),
+		Eras:            persistedEras,
+		OutlierCount:    len(outliers),
+		OutlierTrackIDs: outlierTrackIDs,
+		TotalTracks:     len(tracks),
 	}, nil
 }
 

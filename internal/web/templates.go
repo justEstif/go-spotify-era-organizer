@@ -242,6 +242,11 @@ func defaultFuncs() template.FuncMap {
 			}
 		},
 
+		// printf formats a string with fmt.Sprintf
+		"printf": func(format string, args ...any) string {
+			return fmt.Sprintf(format, args...)
+		},
+
 		// formatDatePtr formats a *time.Time as "Jan 2, 2006"
 		"formatDatePtr": func(t *time.Time) string {
 			if t == nil {
@@ -288,8 +293,10 @@ type SyncStatusData struct {
 // ErasPageData contains data for the eras page template.
 type ErasPageData struct {
 	PageData
-	Eras       []EraData
-	SyncStatus *SyncStatusData
+	Eras         []EraData
+	Outliers     []TrackData
+	OutlierCount int
+	SyncStatus   *SyncStatusData
 }
 
 // EraData contains data for a single era in templates.
@@ -309,4 +316,65 @@ type TrackData struct {
 	Name   string
 	Artist string
 	Album  string
+}
+
+// StatsPageData contains data for the stats dashboard page.
+type StatsPageData struct {
+	PageData
+	TotalTracks  int
+	TotalArtists int
+	TotalEras    int
+	FirstAdded   *time.Time
+	LastAdded    *time.Time
+	TopTags      []TagStat
+	TopArtists   []ArtistStat
+	MonthlyData  []MonthlyStat
+}
+
+// TagStat represents a tag with count and percentage for display.
+type TagStat struct {
+	Name    string
+	Count   int
+	Percent float64
+}
+
+// ArtistStat represents an artist with count and percentage for display.
+type ArtistStat struct {
+	Name    string
+	Count   int
+	Percent float64
+}
+
+// MonthlyStat represents monthly track count with percentage for chart height.
+type MonthlyStat struct {
+	Month string
+	Count int
+	Pct   float64
+}
+
+// TimelinePageData contains data for the timeline page template.
+type TimelinePageData struct {
+	PageData
+	Eras      []TimelineEraData
+	TotalSpan TimelineSpan
+}
+
+// TimelineEraData contains data for a single era on the timeline.
+type TimelineEraData struct {
+	ID         string
+	Name       string
+	TopTags    []string
+	StartDate  time.Time
+	EndDate    time.Time
+	TrackCount int
+	OffsetPct  float64 // position on timeline (0-100%)
+	WidthPct   float64 // width on timeline (0-100%)
+	ColorHue   int     // HSL hue based on dominant tag mood
+	Row        int     // vertical row for overlap stacking
+}
+
+// TimelineSpan represents the total time range of the timeline.
+type TimelineSpan struct {
+	Start time.Time
+	End   time.Time
 }

@@ -74,3 +74,13 @@ func (db *DB) Tags() *TagRepository {
 func (db *DB) Eras() *EraRepository {
 	return &EraRepository{pool: db.pool}
 }
+
+// Stats returns a StatsRepository.
+func (db *DB) Stats() *StatsRepository {
+	return &StatsRepository{pool: db.pool}
+}
+
+// Outliers returns an OutlierRepository.
+func (db *DB) Outliers() *OutlierRepository {
+	return &OutlierRepository{pool: db.pool}
+}

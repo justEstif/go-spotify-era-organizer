@@ -17,6 +17,8 @@
             {{if .SyncStatus}}
             {{template "sync-status" .SyncStatus}}
             {{end}}
+            <a href="/timeline" class="btn btn-ghost btn-sm">Timeline View</a>
+            <a href="/stats" class="btn btn-secondary">Stats</a>
             <a href="/" class="btn btn-secondary">Back</a>
         </div>
     </header>
@@ -108,6 +110,35 @@
         </article>
         {{end}}
     </div>
+    {{if .Outliers}}
+    <section class="outliers-section">
+        <h2 class="outliers-title">Unclassified Tracks <span class="outliers-count">{{.OutlierCount}}</span></h2>
+        <p class="outliers-desc">These tracks didn't fit into any era. You can assign them to an existing era.</p>
+        <div class="outlier-list">
+            {{range .Outliers}}
+            <div class="outlier-item" data-track-id="{{.ID}}">
+                <div class="outlier-item__info">
+                    <span class="outlier-item__name">{{.Name}}</span>
+                    <span class="outlier-item__artist">{{.Artist}}</span>
+                </div>
+                <select class="outlier-item__assign"
+                        hx-post="/api/outliers/assign"
+                        hx-vals='{"track_id": "{{.ID}}"}'
+                        hx-include="this"
+                        hx-swap="outerHTML swap:0.3s"
+                        hx-target="closest .outlier-item"
+                        name="era_id">
+                    <option value="">Assign to era...</option>
+                    {{range $.Eras}}
+                    <option value="{{.ID}}">{{.Name}}</option>
+                    {{end}}
+                </select>
+            </div>
+            {{end}}
+        </div>
+    </section>
+    {{end}}
+
     {{else}}
     <div class="empty-state">
         <div class="empty-state__icon">
@@ -517,6 +548,118 @@
 .recluster-label input[type="range"] {
     width: 160px;
     accent-color: var(--color-primary, #1db954);
+}
+
+/* Outliers section */
+.outliers-section {
+    margin-top: var(--space-2xl);
+    padding: var(--space-lg);
+    background: linear-gradient(135deg, rgba(20, 20, 22, 0.9), rgba(28, 28, 31, 0.8));
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+}
+
+.outliers-title {
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-primary);
+    margin: 0 0 var(--space-xs);
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.outliers-count {
+    font-family: var(--font-body);
+    font-size: var(--text-sm);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-full);
+    border: 1px solid var(--border-subtle);
+}
+
+.outliers-desc {
+    font-family: var(--font-body);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    margin: 0 0 var(--space-lg);
+}
+
+.outlier-list {
+    max-height: 400px;
+    overflow-y: auto;
+    border-radius: var(--radius-md);
+    background: var(--bg-deep);
+}
+
+.outlier-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-sm) var(--space-md);
+    gap: var(--space-md);
+    transition: background var(--transition-fast), opacity 0.3s ease;
+}
+
+.outlier-item:nth-child(odd) {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.outlier-item:hover {
+    background: var(--bg-hover);
+}
+
+.outlier-item__info {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+    flex: 1;
+}
+
+.outlier-item__name {
+    font-family: var(--font-body);
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.outlier-item__artist {
+    font-family: var(--font-body);
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.outlier-item__assign {
+    font-family: var(--font-body);
+    font-size: var(--text-xs);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: var(--space-xs) var(--space-sm);
+    cursor: pointer;
+    min-width: 140px;
+    transition: border-color var(--transition-fast);
+}
+
+.outlier-item__assign:hover {
+    border-color: var(--accent-primary);
+}
+
+.outlier-item__assign:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-primary) 25%, transparent);
 }
 
 .recluster-label output {

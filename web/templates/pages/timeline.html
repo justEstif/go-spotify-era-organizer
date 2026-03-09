@@ -1,0 +1,372 @@
+{{define "title"}}Timeline - Spotify Era Organizer{{end}}
+
+{{define "content"}}
+<section class="timeline-page">
+    <header class="timeline-header">
+        <div class="timeline-header__content">
+            <h1 class="timeline-header__title">Your Listening Timeline</h1>
+            <p class="timeline-header__subtitle">
+                {{if .Eras}}
+                    {{len .Eras}} era{{if gt (len .Eras) 1}}s{{end}} from {{formatDate .TotalSpan.Start}} to {{formatDate .TotalSpan.End}}
+                {{else}}
+                    No eras detected yet.
+                {{end}}
+            </p>
+        </div>
+        <nav class="timeline-header__actions">
+            <a href="/eras" class="btn btn-ghost btn-sm">Grid View</a>
+            <a href="/timeline" class="btn btn-primary btn-sm">Timeline</a>
+        </nav>
+    </header>
+
+    {{if .Eras}}
+    <div class="timeline-container">
+        {{/* Date axis */}}
+        <div class="timeline-axis">
+            <span class="timeline-axis__label timeline-axis__label--start">{{formatDate .TotalSpan.Start}}</span>
+            <div class="timeline-axis__line"></div>
+            <span class="timeline-axis__label timeline-axis__label--end">{{formatDate .TotalSpan.End}}</span>
+        </div>
+
+        {{/* Era bars */}}
+        <div class="timeline-bars" style="--row-count: {{len .Eras}};">
+            {{range .Eras}}
+            <div class="timeline-era"
+                 style="left: {{printf "%.1f" .OffsetPct}}%; width: {{printf "%.1f" .WidthPct}}%; --era-hue: {{.ColorHue}}; --era-row: {{.Row}};"
+                 title="{{.Name}} — {{.TrackCount}} tracks ({{formatDateRange .StartDate .EndDate}})">
+                <div class="timeline-era__label">
+                    <span class="timeline-era__name">{{.Name}}</span>
+                    <span class="timeline-era__count">{{.TrackCount}} tracks</span>
+                </div>
+                <div class="timeline-era__tags">
+                    {{range .TopTags}}<span class="tag">{{.}}</span>{{end}}
+                </div>
+            </div>
+            {{end}}
+        </div>
+    </div>
+
+    {{/* Mobile: vertical list */}}
+    <div class="timeline-list">
+        {{range .Eras}}
+        <a href="/eras" class="timeline-list__item" style="--era-hue: {{.ColorHue}};">
+            <div class="timeline-list__dot"></div>
+            <div class="timeline-list__content">
+                <span class="timeline-list__name">{{.Name}}</span>
+                <span class="timeline-list__dates">{{formatDateRange .StartDate .EndDate}}</span>
+                <span class="timeline-list__count">{{.TrackCount}} tracks</span>
+                <div class="timeline-list__tags">
+                    {{range .TopTags}}<span class="tag">{{.}}</span>{{end}}
+                </div>
+            </div>
+        </a>
+        {{end}}
+    </div>
+    {{else}}
+    <div class="empty-state">
+        <div class="empty-state__icon">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M3 12h4l3-9 4 18 3-9h4"/>
+            </svg>
+        </div>
+        <h2 class="empty-state__title">No Eras Yet</h2>
+        <p class="empty-state__description">
+            Sync your library and analyze your listening patterns to see your eras on a timeline.
+        </p>
+        <div class="empty-state__actions">
+            <a href="/eras" class="btn btn-primary">Go to Eras</a>
+            <a href="/" class="btn btn-secondary">Go Home</a>
+        </div>
+    </div>
+    {{end}}
+</section>
+{{end}}
+
+{{define "scripts"}}
+<style>
+.timeline-page {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: var(--space-xl);
+}
+
+.timeline-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--space-2xl);
+    gap: var(--space-lg);
+    flex-wrap: wrap;
+}
+
+.timeline-header__title {
+    font-family: var(--font-display);
+    font-size: var(--text-3xl);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.timeline-header__subtitle {
+    font-family: var(--font-body);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    margin: var(--space-sm) 0 0;
+}
+
+.timeline-header__actions {
+    display: flex;
+    gap: var(--space-sm);
+}
+
+/* Horizontal timeline (desktop) */
+.timeline-container {
+    background: linear-gradient(135deg, rgba(20, 20, 22, 0.9), rgba(28, 28, 31, 0.8));
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+    padding: var(--space-xl);
+    overflow-x: auto;
+    min-width: 0;
+}
+
+.timeline-axis {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    margin-bottom: var(--space-lg);
+    padding: 0 var(--space-sm);
+}
+
+.timeline-axis__label {
+    font-family: var(--font-mono, 'JetBrains Mono', monospace);
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.timeline-axis__line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, var(--border-subtle), var(--border-default), var(--border-subtle));
+}
+
+.timeline-bars {
+    position: relative;
+    min-width: 600px;
+    height: calc(var(--row-count, 3) * 5.5rem);
+}
+
+.timeline-era {
+    position: absolute;
+    top: calc(var(--era-row, 0) * 5.5rem);
+    height: 4.5rem;
+    background: linear-gradient(
+        135deg,
+        hsla(var(--era-hue), 50%, 15%, 0.9),
+        hsla(var(--era-hue), 40%, 10%, 0.8)
+    );
+    backdrop-filter: blur(8px);
+    border: 1px solid hsla(var(--era-hue), 60%, 40%, 0.5);
+    border-left: 3px solid hsl(var(--era-hue), 70%, 50%);
+    border-radius: var(--radius-md);
+    padding: var(--space-sm) var(--space-md);
+    overflow: hidden;
+    cursor: default;
+    transition: box-shadow var(--transition-slow), transform var(--transition-slow);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: var(--space-xs);
+}
+
+.timeline-era:hover {
+    box-shadow:
+        0 4px 20px rgba(0, 0, 0, 0.4),
+        0 0 30px hsla(var(--era-hue), 60%, 40%, 0.2);
+    transform: translateY(-1px);
+    z-index: 10;
+}
+
+.timeline-era__label {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-sm);
+    overflow: hidden;
+}
+
+.timeline-era__name {
+    font-family: var(--font-display);
+    font-size: var(--text-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.timeline-era__count {
+    font-family: var(--font-mono, 'JetBrains Mono', monospace);
+    font-size: var(--text-xs);
+    color: hsla(var(--era-hue), 60%, 70%, 0.9);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.timeline-era__tags {
+    display: flex;
+    gap: var(--space-xs);
+    overflow: hidden;
+}
+
+.timeline-era__tags .tag {
+    font-size: 0.625rem;
+    padding: 1px var(--space-xs);
+    background: hsla(var(--era-hue), 40%, 20%, 0.6);
+    border-color: hsla(var(--era-hue), 50%, 35%, 0.4);
+    color: hsla(var(--era-hue), 50%, 75%, 0.9);
+    flex-shrink: 0;
+}
+
+/* Vertical list (mobile) */
+.timeline-list {
+    display: none;
+}
+
+/* Empty state */
+.empty-state {
+    text-align: center;
+    padding: var(--space-3xl) var(--space-xl);
+}
+
+.empty-state__icon {
+    color: var(--text-tertiary);
+    margin-bottom: var(--space-lg);
+}
+
+.empty-state__title {
+    font-family: var(--font-display);
+    font-size: var(--text-2xl);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-primary);
+    margin: 0 0 var(--space-md);
+}
+
+.empty-state__description {
+    font-family: var(--font-body);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    max-width: 400px;
+    margin: 0 auto var(--space-xl);
+}
+
+.empty-state__actions {
+    display: flex;
+    gap: var(--space-md);
+    justify-content: center;
+}
+
+/* Button styles (reuse from eras page) */
+.btn-ghost {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
+}
+.btn-ghost:hover {
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+}
+.btn-sm {
+    font-size: var(--text-xs);
+    padding: var(--space-xs) var(--space-sm);
+}
+
+/* Mobile responsive: vertical timeline */
+@media (max-width: 768px) {
+    .timeline-container {
+        display: none;
+    }
+
+    .timeline-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        position: relative;
+        padding-left: var(--space-xl);
+    }
+
+    .timeline-list::before {
+        content: '';
+        position: absolute;
+        left: 0.6rem;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: linear-gradient(180deg, var(--border-subtle), var(--border-default), var(--border-subtle));
+    }
+
+    .timeline-list__item {
+        display: flex;
+        gap: var(--space-md);
+        padding: var(--space-md) 0;
+        text-decoration: none;
+        color: inherit;
+        position: relative;
+    }
+
+    .timeline-list__dot {
+        position: absolute;
+        left: calc(-1 * var(--space-xl) + 0.35rem);
+        top: calc(var(--space-md) + 0.35rem);
+        width: 0.75rem;
+        height: 0.75rem;
+        border-radius: 50%;
+        background: hsl(var(--era-hue), 60%, 45%);
+        border: 2px solid var(--bg-surface);
+        box-shadow: 0 0 8px hsla(var(--era-hue), 60%, 45%, 0.4);
+        flex-shrink: 0;
+    }
+
+    .timeline-list__content {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-xs);
+        background: linear-gradient(135deg, rgba(20, 20, 22, 0.9), rgba(28, 28, 31, 0.8));
+        border: 1px solid hsla(var(--era-hue), 50%, 30%, 0.3);
+        border-radius: var(--radius-md);
+        padding: var(--space-md);
+        width: 100%;
+    }
+
+    .timeline-list__name {
+        font-family: var(--font-display);
+        font-size: var(--text-base);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-primary);
+    }
+
+    .timeline-list__dates {
+        font-family: var(--font-mono, 'JetBrains Mono', monospace);
+        font-size: var(--text-xs);
+        color: var(--text-secondary);
+    }
+
+    .timeline-list__count {
+        font-family: var(--font-body);
+        font-size: var(--text-xs);
+        color: var(--text-tertiary);
+    }
+
+    .timeline-list__tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-xs);
+    }
+}
+</style>
+{{end}}

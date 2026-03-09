@@ -1,0 +1,390 @@
+{{define "title"}}Stats - Spotify Era Organizer{{end}}
+
+{{define "content"}}
+<section class="stats-page">
+    <header class="stats-header">
+        <div class="stats-header__content">
+            <h1 class="stats-header__title">Library Stats</h1>
+            <p class="stats-header__subtitle">
+                {{if gt .TotalTracks 0}}
+                    A breakdown of your {{.TotalTracks}} liked tracks
+                {{else}}
+                    No data yet. Sync your library to see stats.
+                {{end}}
+            </p>
+        </div>
+        <div class="stats-header__actions">
+            <a href="/eras" class="btn btn-secondary">Eras</a>
+            <a href="/" class="btn btn-secondary">Home</a>
+        </div>
+    </header>
+
+    {{if gt .TotalTracks 0}}
+    <!-- Summary Cards -->
+    <div class="stats-summary">
+        <div class="stat-card">
+            <span class="stat-card__number">{{.TotalTracks}}</span>
+            <span class="stat-card__label">Tracks</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-card__number">{{.TotalArtists}}</span>
+            <span class="stat-card__label">Artists</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-card__number">{{.TotalEras}}</span>
+            <span class="stat-card__label">Eras</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-card__number stat-card__number--sm">
+                {{if .FirstAdded}}{{formatDatePtr .FirstAdded}}{{else}}—{{end}}
+                {{if .LastAdded}}<span class="stat-card__sep">→</span> {{formatDatePtr .LastAdded}}{{end}}
+            </span>
+            <span class="stat-card__label">Date Range</span>
+        </div>
+    </div>
+
+    <!-- Top Tags -->
+    {{if .TopTags}}
+    <div class="stats-section">
+        <h2 class="stats-section__title">Top Tags</h2>
+        <div class="stat-bars">
+            {{range .TopTags}}
+            <div class="stat-bar">
+                <span class="stat-bar__label">{{.Name}}</span>
+                <div class="stat-bar__track-bg">
+                    <div class="stat-bar__track" style="width: {{printf "%.0f" .Percent}}%"></div>
+                </div>
+                <span class="stat-bar__value">{{.Count}}</span>
+            </div>
+            {{end}}
+        </div>
+    </div>
+    {{end}}
+
+    <!-- Top Artists -->
+    {{if .TopArtists}}
+    <div class="stats-section">
+        <h2 class="stats-section__title">Top Artists</h2>
+        <div class="stat-bars">
+            {{range .TopArtists}}
+            <div class="stat-bar">
+                <span class="stat-bar__label">{{.Name}}</span>
+                <div class="stat-bar__track-bg">
+                    <div class="stat-bar__track stat-bar__track--artist" style="width: {{printf "%.0f" .Percent}}%"></div>
+                </div>
+                <span class="stat-bar__value">{{.Count}}</span>
+            </div>
+            {{end}}
+        </div>
+    </div>
+    {{end}}
+
+    <!-- Monthly Activity -->
+    {{if .MonthlyData}}
+    <div class="stats-section">
+        <h2 class="stats-section__title">Monthly Activity</h2>
+        <div class="monthly-chart-wrapper">
+            <div class="monthly-chart">
+                {{range .MonthlyData}}
+                <div class="monthly-bar-container" title="{{.Month}}: {{.Count}} tracks">
+                    <span class="monthly-bar__count">{{.Count}}</span>
+                    <div class="monthly-bar" style="height: {{printf "%.0f" .Pct}}%"></div>
+                    <span class="monthly-bar__label">{{.Month}}</span>
+                </div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+    {{end}}
+
+    {{else}}
+    <div class="empty-state">
+        <div class="empty-state__icon">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M3 3v18h18"/>
+                <path d="M7 16l4-8 4 4 4-6"/>
+            </svg>
+        </div>
+        <h2 class="empty-state__title">No Data Yet</h2>
+        <p class="empty-state__description">
+            Sync your Spotify library to see listening statistics and trends.
+        </p>
+        <div class="empty-state__actions">
+            <a href="/eras" class="btn btn-primary">Go to Eras</a>
+            <a href="/" class="btn btn-secondary">Home</a>
+        </div>
+    </div>
+    {{end}}
+</section>
+{{end}}
+
+{{define "scripts"}}
+<style>
+.stats-page {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: var(--space-xl);
+}
+
+.stats-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--space-2xl);
+    gap: var(--space-lg);
+    flex-wrap: wrap;
+}
+
+.stats-header__actions {
+    display: flex;
+    gap: var(--space-md);
+}
+
+.stats-header__title {
+    font-family: var(--font-display);
+    font-size: var(--text-3xl);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.stats-header__subtitle {
+    font-family: var(--font-body);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    margin: var(--space-sm) 0 0;
+}
+
+/* Summary Cards */
+.stats-summary {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-lg);
+    margin-bottom: var(--space-2xl);
+}
+
+.stat-card {
+    background: linear-gradient(135deg, rgba(20, 20, 22, 0.9), rgba(28, 28, 31, 0.8));
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+    padding: var(--space-lg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-sm);
+    text-align: center;
+    transition: border-color var(--transition-slow), box-shadow var(--transition-slow);
+}
+
+.stat-card:hover {
+    border-color: var(--accent-secondary);
+    box-shadow: 0 4px 24px rgba(142, 45, 226, 0.15);
+}
+
+.stat-card__number {
+    font-family: var(--font-display);
+    font-size: var(--text-3xl);
+    color: var(--text-primary);
+    line-height: 1;
+}
+
+.stat-card__number--sm {
+    font-size: var(--text-sm);
+    font-family: var(--font-body);
+    line-height: 1.4;
+}
+
+.stat-card__sep {
+    color: var(--accent-tertiary);
+}
+
+.stat-card__label {
+    font-family: var(--font-body);
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+/* Sections */
+.stats-section {
+    margin-bottom: var(--space-2xl);
+}
+
+.stats-section__title {
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-primary);
+    margin: 0 0 var(--space-lg);
+}
+
+/* Horizontal Bar Charts */
+.stat-bars {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.stat-bar {
+    display: grid;
+    grid-template-columns: 140px 1fr 50px;
+    gap: var(--space-md);
+    align-items: center;
+}
+
+.stat-bar__label {
+    font-family: var(--font-body);
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.stat-bar__track-bg {
+    height: 24px;
+    background: var(--bg-elevated);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.stat-bar__track {
+    height: 100%;
+    background: linear-gradient(90deg, var(--mood-calm), var(--mood-low), var(--mood-mid));
+    border-radius: var(--radius-sm);
+    transition: width 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    min-width: 2px;
+}
+
+.stat-bar__track--artist {
+    background: linear-gradient(90deg, var(--accent-secondary), var(--accent-tertiary), var(--accent-primary));
+}
+
+.stat-bar__value {
+    font-family: var(--font-body);
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+    text-align: right;
+}
+
+/* Monthly Activity Chart */
+.monthly-chart-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.monthly-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 200px;
+    min-width: min-content;
+    padding-bottom: var(--space-xl);
+    position: relative;
+}
+
+.monthly-bar-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    flex: 1;
+    min-width: 28px;
+    height: 100%;
+    position: relative;
+}
+
+.monthly-bar {
+    width: 100%;
+    max-width: 40px;
+    background: linear-gradient(180deg, var(--accent-primary), var(--accent-secondary));
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    transition: height 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    min-height: 2px;
+}
+
+.monthly-bar__count {
+    font-family: var(--font-body);
+    font-size: 0.625rem;
+    color: var(--text-tertiary);
+    margin-bottom: var(--space-xs);
+}
+
+.monthly-bar__label {
+    font-family: var(--font-body);
+    font-size: 0.5625rem;
+    color: var(--text-tertiary);
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    transform: rotate(180deg);
+    margin-top: var(--space-xs);
+    position: absolute;
+    bottom: 0;
+    max-height: var(--space-xl);
+    overflow: hidden;
+}
+
+/* Empty state (reuse from eras) */
+.empty-state {
+    text-align: center;
+    padding: var(--space-3xl) var(--space-xl);
+}
+
+.empty-state__icon {
+    color: var(--text-tertiary);
+    margin-bottom: var(--space-lg);
+}
+
+.empty-state__title {
+    font-family: var(--font-display);
+    font-size: var(--text-2xl);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-primary);
+    margin: 0 0 var(--space-md);
+}
+
+.empty-state__description {
+    font-family: var(--font-body);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    max-width: 400px;
+    margin: 0 auto var(--space-xl);
+}
+
+.empty-state__actions {
+    display: flex;
+    gap: var(--space-md);
+    justify-content: center;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .stats-summary {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .stat-bar {
+        grid-template-columns: 100px 1fr 40px;
+    }
+
+    .stats-header {
+        flex-direction: column;
+    }
+}
+
+@media (max-width: 480px) {
+    .stats-page {
+        padding: var(--space-md);
+    }
+
+    .stat-card__number {
+        font-size: var(--text-2xl);
+    }
+}
+</style>
+{{end}}

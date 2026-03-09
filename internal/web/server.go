@@ -163,6 +163,8 @@ func (s *Server) setupRoutes(staticFS fs.FS) {
 	// Pages
 	s.router.Get("/", s.handlers.Home)
 	s.router.Get("/eras", s.handlers.Eras)
+	s.router.Get("/stats", s.handlers.Stats)
+	s.router.Get("/timeline", s.handlers.Timeline)
 	s.router.Get("/eras/{id}/tracks", s.handlers.EraTracks)
 	s.router.Post("/eras/{id}/playlist", s.handlers.ExportPlaylist)
 
@@ -176,6 +178,7 @@ func (s *Server) setupRoutes(staticFS fs.FS) {
 	s.router.Get("/api/eras", s.handlers.GetEras)
 	s.router.Get("/api/eras/{id}/tracks", s.handlers.GetEraTracksAPI)
 	s.router.Post("/api/recluster", s.handlers.Recluster)
+	s.router.Post("/api/outliers/assign", s.handlers.AssignOutlier)
 	s.router.Post("/api/sync", s.handlers.SyncLibrary)
 	s.router.Get("/api/sync/status", s.handlers.GetSyncStatus)
 }
