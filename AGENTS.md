@@ -147,6 +147,15 @@ func DetectMoodEras(tracks []Track, cfg TagClusterConfig) ([]MoodEra, []Track)
 
 **Rate Limiting:** Implement exponential backoff, batch operations
 
+**Spotify API (post-Feb 2026):**
+
+- Audio Features, Audio Analysis, and Recommendations endpoints are **deprecated** (return 403)
+- Dev mode requires Premium and is limited to 5 test users
+- Playlist endpoints use `/items` not `/tracks`; `zmb3/spotify` library may use old paths — bypass it for playlist operations if needed
+- Track `popularity`, user `email`, and `country` fields are no longer returned
+- Search results capped at 10 per request
+- See `docs/spotify-api-migration.md` for full details
+
 **Clustering:**
 
 - Default clusters: 3 (configurable)

@@ -117,10 +117,10 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	router := chi.NewRouter()
 
 	s := &Server{
-		router:      router,
-		templates:   templates,
-		sessions:    sessions,
-		handlers:    handlers,
+		router:          router,
+		templates:       templates,
+		sessions:        sessions,
+		handlers:        handlers,
 		db:              cfg.DB,
 		syncService:     syncService,
 		eraService:      eraService,

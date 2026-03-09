@@ -124,7 +124,7 @@ Last.fm tag cache for tracks.
 |--------|------|-------------|-------------|
 | track_id | TEXT | PK, FK → tracks | Track ID |
 | tag_name | TEXT | PK | Tag name (lowercase) |
-| tag_count | INTEGER | NOT NULL | Last.fm popularity count |
+| tag_count | INTEGER | NOT NULL | Last.fm tag weight/count (not Spotify popularity) |
 | source | TEXT | NOT NULL, CHECK IN ('track', 'artist') | Tag source |
 | fetched_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Cache timestamp |
 

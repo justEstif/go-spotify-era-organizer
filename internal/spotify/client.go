@@ -4,19 +4,22 @@ package spotify
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/zmb3/spotify/v2"
 )
 
 // Client wraps the Spotify API client with convenience methods.
 type Client struct {
-	api *spotify.Client
+	api        *spotify.Client
+	httpClient *http.Client
 }
 
 // New creates a new Spotify client wrapper.
 // The underlying client should already be authenticated.
-func New(api *spotify.Client) *Client {
-	return &Client{api: api}
+// httpClient is the OAuth-authenticated HTTP client used for direct API calls.
+func New(api *spotify.Client, httpClient *http.Client) *Client {
+	return &Client{api: api, httpClient: httpClient}
 }
 
 // UserID returns the current user's Spotify ID.

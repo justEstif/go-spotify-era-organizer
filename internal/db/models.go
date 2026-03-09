@@ -10,7 +10,6 @@ import (
 type User struct {
 	ID          string
 	DisplayName string
-	Email       string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	LastSyncAt  *time.Time // nullable

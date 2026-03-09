@@ -19,6 +19,14 @@ This tool fetches your liked songs, enriches them with Last.fm genre tags (e.g.,
 - **Sync Cooldown** - 1-hour cooldown between syncs to respect API rate limits
 - **Responsive UI** - HTMX-powered interface with no JavaScript frameworks
 
+## Known Limitations
+
+- **Dev mode limited to 5 test users** — Spotify's dev mode (as of Feb 2026) restricts apps to 5 test users. To support more users, you must [apply for extended quota](https://developer.spotify.com/documentation/web-api/concepts/quota-modes) with Spotify.
+- **Audio features/analysis unavailable** — Spotify deprecated their Audio Features and Audio Analysis endpoints (Nov 2024). This project uses **Last.fm genre tags** for mood-based clustering instead.
+- **Some track metadata removed** — Fields like `popularity`, user `email`, and `country` are no longer returned by Spotify's API (Feb 2026).
+- **Search limit reduced** — Spotify search results are capped at 10 per request (was 50).
+- **Spotify Premium required** — The app owner's Spotify account must have Premium to use dev mode API access.
+
 ## Quick Start
 
 ### Prerequisites
@@ -26,6 +34,7 @@ This tool fetches your liked songs, enriches them with Last.fm genre tags (e.g.,
 - Go 1.25.5+
 - PostgreSQL 16+ (or Podman/Docker)
 - [mise](https://mise.jdx.dev/) for tool management (optional but recommended)
+- **Spotify Premium account** (required for API dev mode since Feb 2026)
 
 ### 1. Clone and Build
 
@@ -54,9 +63,10 @@ migrate -path migrations -database "$DATABASE_URL" up
 #### Spotify App
 
 1. Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
-2. Create a new app
+2. Create a new app (requires **Spotify Premium** on your account since Feb 2026)
 3. Add `http://127.0.0.1:8080/callback` as a Redirect URI
 4. Note your Client ID and Client Secret
+5. Add test users under your app settings (max 5 in dev mode)
 
 #### Last.fm API (Optional but Recommended)
 
@@ -160,6 +170,7 @@ Open your browser to `http://127.0.0.1:8080`.
 - [Database Schema](docs/schema.md) - PostgreSQL table structure
 - [Architecture](docs/architecture.md) - Technical design decisions
 - [Implementation Notes](docs/implementation-notes.md) - Go + HTMX patterns
+- [Spotify API Migration](docs/spotify-api-migration.md) - API changes and deprecations
 
 ## Tech Stack
 

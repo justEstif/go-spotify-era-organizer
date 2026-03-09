@@ -3,26 +3,42 @@ package spotify
 import (
 	"context"
 	"fmt"
-
-	"github.com/zmb3/spotify/v2"
 )
 
 const maxTracksPerRequest = 100
 
+// createPlaylistRequest is the JSON body for POST /me/playlists.
+type createPlaylistRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Public      bool   `json:"public"`
+}
+
+// createPlaylistResponse is the JSON response from POST /me/playlists.
+type createPlaylistResponse struct {
+	ID string `json:"id"`
+}
+
+// addItemsRequest is the JSON body for POST /playlists/{id}/items.
+type addItemsRequest struct {
+	URIs []string `json:"uris"`
+}
+
 // CreatePlaylist creates a new playlist for the current user.
 // Returns the playlist ID.
 func (c *Client) CreatePlaylist(ctx context.Context, name, description string, public bool) (string, error) {
-	userID, err := c.UserID(ctx)
-	if err != nil {
-		return "", err
+	reqBody := createPlaylistRequest{
+		Name:        name,
+		Description: description,
+		Public:      public,
 	}
 
-	playlist, err := c.api.CreatePlaylistForUser(ctx, userID, name, description, public, false)
-	if err != nil {
+	var resp createPlaylistResponse
+	if err := c.doAPIRequest(ctx, "POST", "/me/playlists", reqBody, &resp); err != nil {
 		return "", fmt.Errorf("creating playlist: %w", err)
 	}
 
-	return playlist.ID.String(), nil
+	return resp.ID, nil
 }
 
 // AddTracksToPlaylist adds tracks to a playlist, handling batching for large sets.
@@ -32,19 +48,20 @@ func (c *Client) AddTracksToPlaylist(ctx context.Context, playlistID string, tra
 		return nil
 	}
 
-	// Convert to spotify.ID
-	ids := make([]spotify.ID, len(trackIDs))
-	for i, id := range trackIDs {
-		ids[i] = spotify.ID(id)
-	}
-
 	// Batch in chunks of 100
-	for i := 0; i < len(ids); i += maxTracksPerRequest {
-		end := min(i+maxTracksPerRequest, len(ids))
-		batch := ids[i:end]
+	for i := 0; i < len(trackIDs); i += maxTracksPerRequest {
+		end := min(i+maxTracksPerRequest, len(trackIDs))
+		batch := trackIDs[i:end]
 
-		_, err := c.api.AddTracksToPlaylist(ctx, spotify.ID(playlistID), batch...)
-		if err != nil {
+		uris := make([]string, len(batch))
+		for j, id := range batch {
+			uris[j] = "spotify:track:" + id
+		}
+
+		reqBody := addItemsRequest{URIs: uris}
+		path := fmt.Sprintf("/playlists/%s/items", playlistID)
+
+		if err := c.doAPIRequest(ctx, "POST", path, reqBody, nil); err != nil {
 			return fmt.Errorf("adding tracks (batch %d-%d): %w", i+1, end, err)
 		}
 	}

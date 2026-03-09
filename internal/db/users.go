@@ -18,14 +18,13 @@ type UserRepository struct {
 // Create inserts a new user.
 func (r *UserRepository) Create(ctx context.Context, user *User) error {
 	query := `
-		INSERT INTO users (id, display_name, email, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO users (id, display_name, created_at, updated_at)
+		VALUES ($1, $2, $3, $4)
 	`
 	now := time.Now()
 	_, err := r.pool.Exec(ctx, query,
 		user.ID,
 		user.DisplayName,
-		user.Email,
 		now,
 		now,
 	)
@@ -40,7 +39,7 @@ func (r *UserRepository) Create(ctx context.Context, user *User) error {
 // Get retrieves a user by ID.
 func (r *UserRepository) Get(ctx context.Context, id string) (*User, error) {
 	query := `
-		SELECT id, display_name, email, created_at, updated_at, last_sync_at
+		SELECT id, display_name, created_at, updated_at, last_sync_at
 		FROM users
 		WHERE id = $1
 	`
@@ -48,7 +47,6 @@ func (r *UserRepository) Get(ctx context.Context, id string) (*User, error) {
 	err := r.pool.QueryRow(ctx, query, id).Scan(
 		&user.ID,
 		&user.DisplayName,
-		&user.Email,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 		&user.LastSyncAt,
@@ -65,18 +63,16 @@ func (r *UserRepository) Get(ctx context.Context, id string) (*User, error) {
 // Upsert creates or updates a user.
 func (r *UserRepository) Upsert(ctx context.Context, user *User) error {
 	query := `
-		INSERT INTO users (id, display_name, email, created_at, updated_at)
-		VALUES ($1, $2, $3, NOW(), NOW())
+		INSERT INTO users (id, display_name, created_at, updated_at)
+		VALUES ($1, $2, NOW(), NOW())
 		ON CONFLICT (id) DO UPDATE SET
 			display_name = EXCLUDED.display_name,
-			email = EXCLUDED.email,
 			updated_at = NOW()
 		RETURNING created_at, updated_at
 	`
 	err := r.pool.QueryRow(ctx, query,
 		user.ID,
 		user.DisplayName,
-		user.Email,
 	).Scan(&user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("upserting user: %w", err)

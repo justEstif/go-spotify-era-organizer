@@ -87,7 +87,7 @@ func NewHandlers(deps HandlerDeps) *Handlers {
 	return &Handlers{
 		auth:            deps.Auth,
 		sessions:        deps.Sessions,
-		templates:        deps.Templates,
+		templates:       deps.Templates,
 		oauthStates:     newOAuthStateStore(),
 		db:              deps.DB,
 		syncService:     deps.SyncService,
@@ -180,7 +180,6 @@ func (h *Handlers) Callback(w http.ResponseWriter, r *http.Request) {
 		user := &db.User{
 			ID:          userID,
 			DisplayName: displayName,
-			Email:       spotifyUser.Email,
 		}
 		if err := h.db.Users().Upsert(ctx, user); err != nil {
 			log.Printf("Warning: failed to upsert user: %v", err)
@@ -228,7 +227,7 @@ func (h *Handlers) triggerInitialAnalysis(token *oauth2.Token, userID string) {
 	// Create Spotify client with the token
 	httpClient := h.auth.Client(ctx, token)
 	spotifyAPI := spotify.New(httpClient)
-	client := spotifyclient.New(spotifyAPI)
+	client := spotifyclient.New(spotifyAPI, httpClient)
 
 	// Run full pipeline with force=true (bypass cooldown for initial sync)
 	result, err := h.analysisService.RunAnalysis(ctx, client, userID, true)
@@ -447,7 +446,7 @@ func (h *Handlers) Analyze(w http.ResponseWriter, r *http.Request) {
 	// Create Spotify client
 	httpClient := h.auth.Client(ctx, session.Token)
 	spotifyAPI := spotify.New(httpClient)
-	client := spotifyclient.New(spotifyAPI)
+	client := spotifyclient.New(spotifyAPI, httpClient)
 
 	log.Printf("Starting analysis for user %s", userID)
 
@@ -667,7 +666,7 @@ func (h *Handlers) SyncLibrary(w http.ResponseWriter, r *http.Request) {
 	// Create Spotify client
 	httpClient := h.auth.Client(ctx, session.Token)
 	spotifyAPI := spotify.New(httpClient)
-	client := spotifyclient.New(spotifyAPI)
+	client := spotifyclient.New(spotifyAPI, httpClient)
 
 	log.Printf("Starting sync for user %s", userID)
 
